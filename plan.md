@@ -27,7 +27,7 @@ Node.js hanya dibutuhkan developer untuk menjalankan test dan build. Pengguna ak
 ### Prinsip yang tidak boleh dilanggar
 
 - **Hanya baris deskripsi yang berubah.** Jangan pernah serialize ulang TMDL dari model objek. Writer hanya menyisipkan, mengganti, atau menghapus baris deskripsi `///` milik objek yang dikenali. Semua byte lain dibiarkan apa adanya: tab, spasi, line ending, DAX, M, annotation, dan blank line.
-- **Offline.** Tidak ada request jaringan, CDN, atau font eksternal. Metadata model tidak boleh keluar dari browser.
+- **Offline.** Tidak ada request jaringan, CDN, atau font eksternal. Metadata model tidak boleh keluar dari browser. **Satu-satunya pengecualian** adalah fitur Saran AI (opt-in, BYOK, persetujuan eksplisit): hanya data objek yang diminta yang dikirim ke Gemini/Claude, dan CSP hanya mengizinkan dua host itu.
 - **Gagal dengan aman.** Kalau validator menemukan perubahan di luar baris deskripsi, tombol Copy diblokir.
 
 ---
@@ -158,7 +158,7 @@ createOrReplace
 
 - `expression`, `queryGroup`, `hierarchy`, `level`, `calculationGroup`/`calculationItem`, `partition`, `function` (DAX UDF), `relationship`, dan `role`.
 - Mode folder PBIP (banyak file → unduh ZIP).
-- Saran deskripsi via LLM API (opt-in eksplisit karena data keluar dari browser).
+- ~~Saran deskripsi via LLM API (opt-in eksplisit karena data keluar dari browser).~~ Selesai (Gemini + Claude, BYOK). Copilotku menyusul (butuh proxy CORS).
 - Virtualisasi list untuk model yang sangat besar.
 
 ### Di luar lingkup
@@ -308,11 +308,22 @@ Validator tidak sekadar menghapus semua baris `///`, karena komentar DAX `///` d
    - EOL, BOM, dan newline akhir sama.
 4. Jika gagal, kembalikan daftar `{line, expected, actual}` untuk ditampilkan di UI.
 
-### 7.4 CSV (`csv.js`)
+### 7.4 Excel (`xlsx.js`, `sheet.js`, `zip.js`)
 
-- Kolom: `Table, Type, Name, DataType, IsHidden, Expression, Description`.
-- Export: UTF-8 dengan BOM agar Excel membaca karakter dengan benar. Delimiter bisa dipilih (`;` default karena Excel dengan locale Indonesia memakai `;`, atau `,`). Quoting mengikuti RFC 4180, dan sel multi-baris diperbolehkan.
-- Import: delimiter dideteksi otomatis dari header. Baris dicocokkan lewat `Type|Table|Name` (case-insensitive). Hasilnya ditampilkan sebagai ringkasan: N cocok, M tidak ditemukan, K berubah. Pengguna mengonfirmasi dulu sebelum diterapkan.
+> Sebelumnya CSV. Diganti Excel atas permintaan pengguna; CSV dihapus.
+
+- Kolom: `Table, Type, Name, DataType, IsHidden, Expression, Description`. Satu sheet ("Deskripsi"), header tebal dan dibekukan, autofilter, lebar kolom, wrap untuk Expression/Description.
+- Ditulis tanpa library: ZIP *stored* + SpreadsheetML minimal. Semua teks ditulis sebagai *inline string*, jadi nilai seperti `=SUM(...)` tidak pernah dianggap rumus. Batas 32.767 karakter per sel.
+- Import: sheet pertama (lewat workbook.xml + rels), shared strings (rich text, abaikan phonetic), inline string, angka/boolean, prefix namespace, ZIP deflate via `DecompressionStream`. Header boleh Inggris atau Indonesia (Tabel/Tipe/Nama/Deskripsi); tipe boleh `kolom`/`tabel`.
+- Baris dicocokkan lewat `Type|Table|Name` (case-insensitive). Ringkasan: N cocok, M tidak ditemukan, K berubah, lalu konfirmasi sebelum diterapkan.
+
+### 7.5 Saran AI (`ai-prompt.js`, `src/ai/providers.js`, `src/ui/ai.js`)
+
+- Provider: Gemini (REST `generateContent`, `responseMimeType: application/json`, retry tanpa `thinkingBudget`) dan Claude (REST `/v1/messages` dengan header `anthropic-dangerous-direct-browser-access`, structured output `json_schema`, fallback tanpa `output_config`). Pola mengikuti `dama-explorer/web/src/ai/providers.ts`.
+- Daftar model dimuat dari API; default Gemini Flash-Lite terbaru, lalu Claude Haiku. Model, bahasa (`id`/`en`), dan konteks bisnis disimpan di prefs; key di session/localStorage.
+- Prompt: system prompt berisi aturan gaya (1–2 kalimat, ≤ ~200 karakter, tanpa mengulang rumus, tanpa mengarang, abaikan instruksi di dalam data). Pesan user berupa JSON: konteks bisnis, tabel terkait (deskripsi + nama kolom/measure ≤ 80), dan objek (id, tipe, nama, dataType, ekspresi ≤ 1.500 karakter, deskripsi yang ada). Jawaban `{"items":[{"id","description"}]}`.
+- Batch: maks 25 objek / ±24.000 karakter, objek satu tabel dikelompokkan, 2 permintaan paralel, retry sekali untuk 429/5xx, berhenti total untuk error key/izin/model.
+- Keamanan isi: hasil AI hanya diterapkan jika deskripsi objek tidak diubah pengguna selama proses berjalan. Menimpa deskripsi yang sudah terisi selalu didahului konfirmasi (per objek dan massal).
 
 ---
 
@@ -479,3 +490,5 @@ Lihat §3. Jangan dikerjakan tanpa konfirmasi.
 - **CSP** `connect-src 'none'` dipasang di HTML sebagai jaminan offline.
 - **Duplikat key / partial declaration** digabung menjadi satu baris di grid (`items.js`), dengan penanda `×N`.
 - **Bulk fill** tanpa baris tercentang menargetkan semua objek editable di tampilan aktif (dengan konfirmasi jumlah di modal).
+- **Excel menggantikan CSV** (permintaan pengguna). Writer/reader `.xlsx` ditulis sendiri tanpa dependency; diverifikasi terbaca openpyxl, dan file yang disimpan ulang openpyxl terbaca kembali.
+- **Saran AI (Gemini, Claude)** ditambahkan dengan persetujuan eksplisit. **Copilotku ditunda:** API-nya tidak menjawab preflight CORS, sehingga butuh proxy (mis. Cloudflare Worker seperti `dama-explorer/web/copilotku-proxy`, dengan origin `null` untuk halaman `file://`). Pengguna memilih menunda.

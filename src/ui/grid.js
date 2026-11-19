@@ -6,6 +6,7 @@ import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
 import { h, $, clear, autoGrow, fmt } from './dom.js';
 import { initTools } from './tools.js';
+import { initAi } from './ai.js';
 
 const PAGE_SIZE = 200;
 const LINE_MAX = 300;
@@ -265,7 +266,12 @@ export function initGrid(app, root) {
     }));
     ta.value = app.desc(it);
     const resetBtn = h('button', { type: 'button', class: 'icon-btn reset', title: 'Kembalikan ke deskripsi asli', 'aria-label': 'Reset', text: '↺' });
-    const meta = h('div', { class: 'desc-meta' }, h('span', { class: 'changed-mark', text: 'diubah' }), h('span', { class: 'len-warn' }), resetBtn);
+    const aiBtn = /** @type {HTMLButtonElement} */ (h('button', {
+      type: 'button', class: 'icon-btn ai-suggest', title: 'Isi dengan saran AI', 'aria-label': 'Saran AI untuk ' + it.name, text: '✨', disabled: !it.editable,
+    }));
+    const meta = h('div', { class: 'desc-meta' },
+      h('span', { class: 'ai-mark', title: 'Diisi dengan saran AI. Periksa sebelum dipakai.', text: '✨ saran AI' }),
+      h('span', { class: 'changed-mark', text: 'diubah' }), h('span', { class: 'len-warn' }), resetBtn, aiBtn);
     const cb = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', 'aria-label': 'Pilih ' + it.name, disabled: !it.editable }));
     cb.checked = d.selected.has(it.key);
 
@@ -323,6 +329,7 @@ export function initGrid(app, root) {
         app.setDesc(it.key, before);
       }
     });
+    aiBtn.addEventListener('click', () => ai.suggestOne(it, aiBtn));
     resetBtn.addEventListener('click', () => {
       ta.value = it.originalDesc;
       autoGrow(ta);
@@ -342,6 +349,9 @@ export function initGrid(app, root) {
   function updateLen(row, value) {
     const n = normalizeDescription(value).length;
     row.querySelector('.len-warn').textContent = n > LONG_DESC ? `${fmt(n)} karakter (panjang)` : '';
+    const d = doc();
+    const aiText = d && d.aiFilled.get(row.dataset.key);
+    row.classList.toggle('is-ai', aiText !== undefined && aiText === normalizeDescription(value));
   }
 
   function focusNext(row) {
@@ -472,13 +482,12 @@ export function initGrid(app, root) {
     }
   });
 
-  const tools = initTools(app, toolsBar, {
-    viewItems,
-    selectedItems: () => {
-      const d = doc();
-      return d ? d.items.filter((it) => d.selected.has(it.key) && it.editable) : [];
-    },
-  });
+  const selectedItems = () => {
+    const d = doc();
+    return d ? d.items.filter((it) => d.selected.has(it.key) && it.editable) : [];
+  };
+  const ai = initAi(app, { viewItems, selectedItems });
+  const tools = initTools(app, toolsBar, { viewItems, selectedItems, ai });
 
   // ---------- lifecycle ----------
   function defaultView() {

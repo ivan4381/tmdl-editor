@@ -81,3 +81,48 @@ export function loadPrefs() {
 export function savePrefs(patch) {
   write(PREFS_KEY, { ...loadPrefs(), ...patch });
 }
+
+// ---------- AI keys (BYOK) ----------
+// Default sessionStorage: gone when the tab closes. "Ingat key" uses localStorage.
+const AI_KEYS = PREFIX + 'ai-keys';
+
+function readKeys(store) {
+  try {
+    const raw = store && store.getItem(AI_KEYS);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    const str = (x) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
+    return { gemini: str(v.gemini), claude: str(v.claude) };
+  } catch {
+    return null;
+  }
+}
+
+function store(kind) {
+  try {
+    return kind === 'local' ? window.localStorage : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** @returns {{keys:{gemini?:string, claude?:string}, remember:boolean}} */
+export function loadAiKeys() {
+  const local = readKeys(store('local'));
+  if (local) return { keys: local, remember: true };
+  return { keys: readKeys(store('session')) || {}, remember: false };
+}
+
+/** @param {{gemini?:string, claude?:string}} keys @param {boolean} remember */
+export function saveAiKeys(keys, remember) {
+  const clean = { gemini: (keys.gemini || '').trim() || undefined, claude: (keys.claude || '').trim() || undefined };
+  const target = store(remember ? 'local' : 'session');
+  const other = store(remember ? 'session' : 'local');
+  try {
+    if (other) other.removeItem(AI_KEYS);
+    if (clean.gemini || clean.claude) target && target.setItem(AI_KEYS, JSON.stringify(clean));
+    else if (target) target.removeItem(AI_KEYS);
+  } catch {
+    /* storage blocked: keys stay in memory until the tab closes */
+  }
+}

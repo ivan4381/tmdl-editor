@@ -128,7 +128,7 @@ main { padding: 16px; max-width: 1600px; margin: 0 auto; }
 .link-btn { border: none; background: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 12px; }
 .link-btn:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-select, input[type="text"], input[type="search"] {
+select, input[type="text"], input[type="search"], input[type="password"] {
   border: 1px solid var(--border-strong); background: var(--surface); border-radius: 6px; padding: 6px 8px;
 }
 .tag {
@@ -155,6 +155,8 @@ select, input[type="text"], input[type="search"] {
 .field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .field > span { font-weight: 500; font-size: 13px; }
 .field textarea, .field input, .field select { width: 100%; }
+.field input[type="checkbox"], .field input[type="radio"] { width: auto; }
+.field .check { align-self: flex-start; white-space: normal; }
 
 /* ---------- input ---------- */
 .input-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
@@ -310,3 +312,21 @@ dialog::backdrop { background: rgba(10, 14, 22, 0.45); }
   .topbar-right { margin-left: 0; width: 100%; }
   main { padding: 12px; }
 }
+
+/* ---------- AI ---------- */
+.ai-btn { border-color: color-mix(in srgb, var(--t-table) 45%, var(--border-strong)); }
+.icon-btn.ai-suggest { font-size: 13px; }
+.icon-btn.ai-suggest:disabled { opacity: 0.35; cursor: not-allowed; }
+.icon-btn.ai-suggest.busy { animation: ai-pulse 0.9s ease-in-out infinite; cursor: progress; opacity: 1; }
+@keyframes ai-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .icon-btn.ai-suggest.busy { animation: none; opacity: 0.6; } }
+.ai-mark { display: none; color: var(--t-table); font-weight: 600; margin-right: auto; }
+.row.is-ai .ai-mark { display: inline; }
+.row.is-ai textarea.desc { border-style: dashed; }
+.ai-notice { font-size: 13px; }
+.ai-summary { margin: 10px 0 4px; }
+.warn-text { color: var(--warn); }
+.row-inline { display: flex; gap: 8px; align-items: center; }
+.row-inline select { flex: 1; min-width: 0; }
+.progress-bar.wide { width: 100%; height: 10px; margin: 16px 0 8px; }
+.quote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 0 6px 6px 0; white-space: pre-wrap; }

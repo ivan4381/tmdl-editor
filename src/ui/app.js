@@ -25,6 +25,7 @@ import { initOutput } from './output-panel.js';
  * @property {Map<string,string>} edits
  * @property {import('./storage.js').Draft|null} draft   draft offered for restore
  * @property {Set<string>} selected
+ * @property {Map<string,string>} aiFilled  key → description last written by AI (for the ✨ marker)
  */
 
 const listeners = new Map();
@@ -75,6 +76,7 @@ const app = {
         edits: new Map(),
         draft: storage.loadDraft(hash),
         selected: new Set(),
+        aiFilled: new Map(),
       };
     });
     this.active = 0;
@@ -116,7 +118,7 @@ const app = {
     this.updateProgress();
   },
 
-  /** Apply many edits at once (CSV import, bulk fill, replace). */
+  /** Apply many edits at once (Excel import, AI fill, bulk fill, replace). */
   setMany(pairs, doc = this.doc()) {
     for (const [k, v] of pairs) this.setDesc(k, v, { silent: true }, doc);
     this.emit('bulk');

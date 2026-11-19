@@ -1,25 +1,30 @@
-// v1.1 tools: CSV export/import, bulk fill with templates, find & replace.
+// v1.1 tools: Excel export/import, AI fill, bulk fill with templates, find & replace.
 
-import { toCsv, matchCsv } from '../core/csv.js';
+import { buildXlsx, readXlsx } from '../core/xlsx.js';
+import { SHEET_COLUMNS, itemsToRows, matchRows } from '../core/sheet.js';
 import { applyTemplate, replaceAllLiteral } from '../core/bulk.js';
 import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
 import { h, clear, toast, downloadText, openModal, fmt } from './dom.js';
 
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 /**
  * @param {any} app
  * @param {HTMLElement} bar
- * @param {{viewItems:()=>any[], selectedItems:()=>any[]}} ctx
+ * @param {{viewItems:()=>any[], selectedItems:()=>any[], ai:{openBulk:()=>void, openSettings:(cb?:()=>void)=>void}}} ctx
  */
 export function initTools(app, bar, ctx) {
   const selInfo = h('span', { class: 'muted sel-info' });
+  const aiBtn = h('button', { type: 'button', class: 'btn small ai-btn', id: 'ai-bulk-btn', text: '✨ Isi dengan AI…' });
+  const aiSettingsBtn = h('button', { type: 'button', class: 'btn small', id: 'ai-settings-btn', title: 'Pengaturan AI (API key, model, bahasa)', 'aria-label': 'Pengaturan AI', text: '⚙ AI' });
   const bulkBtn = h('button', { type: 'button', class: 'btn small', text: 'Isi massal…' });
   const replaceBtn = h('button', { type: 'button', class: 'btn small', text: 'Cari & ganti…' });
-  const exportBtn = h('button', { type: 'button', class: 'btn small', text: 'Export CSV…' });
-  const importBtn = h('button', { type: 'button', class: 'btn small', text: 'Import CSV…' });
+  const exportBtn = h('button', { type: 'button', class: 'btn small', id: 'xlsx-export-btn', text: 'Export Excel…' });
+  const importBtn = h('button', { type: 'button', class: 'btn small', id: 'xlsx-import-btn', text: 'Import Excel…' });
   const clearSelBtn = h('button', { type: 'button', class: 'link-btn', text: 'batal pilih' });
-  const fileInput = /** @type {HTMLInputElement} */ (h('input', { type: 'file', accept: '.csv,text/csv,text/plain', hidden: true }));
-  bar.append(selInfo, clearSelBtn, h('span', { class: 'spacer' }), bulkBtn, replaceBtn, exportBtn, importBtn, fileInput);
+  const fileInput = /** @type {HTMLInputElement} */ (h('input', { type: 'file', id: 'xlsx-file', accept: '.xlsx,' + XLSX_MIME, hidden: true }));
+  bar.append(selInfo, clearSelBtn, h('span', { class: 'spacer' }), aiBtn, aiSettingsBtn, bulkBtn, replaceBtn, exportBtn, importBtn, fileInput);
 
   function refresh() {
     const n = ctx.selectedItems().length;
@@ -33,33 +38,26 @@ export function initTools(app, bar, ctx) {
     refresh();
   });
 
-  // ---------- CSV export ----------
+  aiBtn.addEventListener('click', () => ctx.ai.openBulk());
+  aiSettingsBtn.addEventListener('click', () => ctx.ai.openSettings());
+
+  // ---------- Excel export ----------
   exportBtn.addEventListener('click', () => {
     const doc = app.doc();
-    openModal('Export CSV', (close) => {
-      const delim = /** @type {HTMLSelectElement} */ (h('select', { id: 'csv-delim' },
-        h('option', { value: ';', text: 'Titik koma ( ; ) — Excel locale Indonesia' }),
-        h('option', { value: ',', text: 'Koma ( , ) — Excel locale Inggris' })));
-      delim.value = app.prefs.csvDelimiter === ',' ? ',' : ';';
-      const scope = /** @type {HTMLSelectElement} */ (h('select', { id: 'csv-scope' },
+    openModal('Export Excel', (close) => {
+      const scope = /** @type {HTMLSelectElement} */ (h('select', { id: 'xlsx-scope' },
         h('option', { value: 'all', text: `Semua objek (${fmt(doc.items.length)})` }),
         h('option', { value: 'view', text: `Tampilan saat ini (${fmt(ctx.viewItems().length)})` })));
       return [
-        h('p', { class: 'muted', text: 'Kolom: Table, Type, Name, DataType, IsHidden, Expression, Description. SME cukup mengisi kolom Description, lalu file di-import kembali. Baris dicocokkan lewat Type + Table + Name.' }),
-        h('label', { class: 'field' }, h('span', { text: 'Delimiter' }), delim),
+        h('p', { class: 'muted', text: 'Kolom: Table, Type, Name, DataType, IsHidden, Expression, Description. SME cukup mengisi kolom Description, lalu file di-import kembali. Baris dicocokkan lewat Type + Table + Name, jadi jangan ubah tiga kolom itu.' }),
         h('label', { class: 'field' }, h('span', { text: 'Cakupan' }), scope),
         h('div', { class: 'actions' },
           h('button', {
-            type: 'button', class: 'btn primary', text: 'Download CSV',
+            type: 'button', class: 'btn primary', id: 'xlsx-download', text: 'Download Excel',
             onclick: () => {
               const items = scope.value === 'view' ? ctx.viewItems() : doc.items;
-              const csv = toCsv(items.map((it) => ({
-                table: it.table, type: it.type, name: it.name, dataType: it.dataType, isHidden: it.isHidden,
-                expression: it.expression ? truncate(it.expression, 1000) : '',
-                description: normalizeDescription(app.desc(it)),
-              })), { delimiter: delim.value });
-              app.savePrefs({ csvDelimiter: delim.value });
-              downloadText(baseName(doc.name) + '.descriptions.csv', csv, 'text/csv;charset=utf-8');
+              const bytes = buildXlsx({ sheetName: 'Deskripsi', columns: SHEET_COLUMNS, rows: itemsToRows(items, (it) => app.desc(it)) });
+              downloadText(baseName(doc.name) + '.descriptions.xlsx', bytes, XLSX_MIME);
               close();
             },
           }),
@@ -68,22 +66,22 @@ export function initTools(app, bar, ctx) {
     });
   });
 
-  // ---------- CSV import ----------
+  // ---------- Excel import ----------
   importBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
-    let text;
+    let rows;
     try {
-      text = new TextDecoder('utf-8').decode(await file.arrayBuffer());
-    } catch {
-      toast('Gagal membaca file CSV', 'error');
+      rows = await readXlsx(new Uint8Array(await file.arrayBuffer()));
+    } catch (e) {
+      toast('Gagal membaca file Excel: ' + (e && e.message ? e.message : e), 'error');
       return;
     }
     const doc = app.doc();
-    const res = matchCsv(text, doc.items, (k) => app.desc(doc.byKey.get(k)));
-    openModal('Import CSV: ' + file.name, (close) => {
+    const res = matchRows(rows, doc.items, (k) => app.desc(doc.byKey.get(k)));
+    openModal('Import Excel: ' + file.name, (close) => {
       if (res.errors.length) {
         return [h('div', { class: 'banner error' }, res.errors.join(' ')), h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', text: 'Tutup', onclick: close }))];
       }
@@ -93,7 +91,7 @@ export function initTools(app, bar, ctx) {
           stat(res.changed.length, 'berubah'),
           stat(res.notFound.length, 'tidak ditemukan'),
           res.readOnly ? stat(res.readOnly, 'read-only (ref)') : null),
-        h('p', { class: 'muted', text: `Delimiter terdeteksi: "${res.delimiter === '\t' ? 'tab' : res.delimiter}". Hanya baris yang berubah yang akan diterapkan.` }),
+        h('p', { class: 'muted', text: 'Sheet pertama yang dibaca. Hanya baris yang berubah yang akan diterapkan.' }),
       ];
       if (res.changed.length) {
         out.push(h('h3', { text: 'Perubahan' }), h('div', { class: 'change-list' },
@@ -109,10 +107,10 @@ export function initTools(app, bar, ctx) {
       }
       out.push(h('div', { class: 'actions' },
         h('button', {
-          type: 'button', class: 'btn primary', id: 'csv-apply', text: `Terapkan ${fmt(res.changed.length)} perubahan`, disabled: res.changed.length === 0,
+          type: 'button', class: 'btn primary', id: 'xlsx-apply', text: `Terapkan ${fmt(res.changed.length)} perubahan`, disabled: res.changed.length === 0,
           onclick: () => {
             app.setMany(res.changed.map((c) => [c.key, c.to]));
-            toast(`${res.changed.length} deskripsi diperbarui dari CSV`, 'ok');
+            toast(`${res.changed.length} deskripsi diperbarui dari Excel`, 'ok');
             close();
           },
         }),

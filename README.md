@@ -17,7 +17,9 @@ validator: kalau ada perubahan di luar baris deskripsi, tombol Copy dan Download
    - `Enter` menyimpan dan pindah ke baris berikutnya, `Shift+Enter` membuat baris baru,
      `Esc` membatalkan perubahan sel, dan `Ctrl+F` membuka pencarian.
    - Tersedia filter Semua / Kosong / Terisi / Diubah, opsi sembunyikan objek hidden, dan progres per tabel.
-   - Isi massal dengan template `{name}`, `{table}`, `{type}`, cari & ganti, serta export/import CSV untuk SME.
+   - **✨ Saran AI** per objek (tombol ✨ di setiap baris) atau sekaligus lewat **✨ Isi dengan AI…**
+     (hanya yang kosong, atau semua objek). Deskripsi yang sudah terisi tidak ditimpa tanpa konfirmasi.
+   - Isi massal dengan template `{name}`, `{table}`, `{type}`, cari & ganti, serta **export/import Excel (.xlsx)** untuk SME.
    - Draft tersimpan otomatis di browser (localStorage) dan ditawarkan kembali saat script yang sama di-parse lagi.
 5. Di langkah **Output**, periksa diff dan status validasi, lalu **Copy to clipboard**. Di TMDL view, buka tab baru,
    paste, lalu klik **Apply**. Simpan PBIP atau commit git dulu sebelum Apply. Untuk script seluruh model, simpan juga
@@ -29,22 +31,36 @@ Catatan:
 - `ref table X` (script parsial) ditampilkan read-only. Measure dan kolom di bawahnya tetap bisa diedit.
 - Teks yang **ditempel** ke textarea selalu dinormalkan browser ke line ending LF (aturan standar `<textarea>`).
   TMDL view menerima LF. File yang di-drag mempertahankan CRLF dan BOM persis.
-- Halaman memasang Content-Security-Policy `connect-src 'none'`, sehingga browser sendiri memblokir request jaringan.
+- Halaman memasang Content-Security-Policy yang hanya mengizinkan koneksi ke `generativelanguage.googleapis.com`
+  dan `api.anthropic.com`, dan itu pun hanya dipakai saat tombol ✨ ditekan. Selain itu tidak ada request jaringan.
+
+### Saran AI (opsional, BYOK)
+
+- Buka **⚙ AI** di toolbar, isi API key **Google Gemini** dan/atau **Anthropic Claude** milik Anda sendiri, klik
+  *Muat daftar model*, lalu pilih model, bahasa deskripsi, dan (opsional) konteks bisnis.
+- Key disimpan di `sessionStorage` (hilang saat tab ditutup), atau di `localStorage` jika *Ingat key* dicentang.
+  Key hanya dikirim ke API provider-nya.
+- **Data yang dikirim:** untuk objek yang diminta saja: nama, tipe, tabel, data type, ekspresi DAX (dipotong),
+  deskripsi yang ada, nama kolom/measure lain di tabel yang sama, dan konteks bisnis. Script lengkap, partition/M,
+  dan objek lain tidak dikirim. Fitur ini perlu persetujuan eksplisit di pengaturan.
+- Hasil AI ditandai **✨ saran AI** dan bergaris putus-putus di grid sampai Anda menyuntingnya. Validator tetap berlaku.
+- Copilotku belum didukung karena butuh proxy CORS (lihat `plan.md` §12).
 
 ## Pengembangan
 
 Butuh Node.js ≥ 18. Tidak ada `npm install` karena tidak ada dependency.
 
 ```bash
-npm test         # node --test, semua test core (parser, writer, validator, diff, csv, items)
+npm test         # node --test: parser, writer, validator, diff, xlsx/sheet, items, AI (fetch tiruan, tanpa jaringan)
 npm run build    # menghasilkan dist/tmdl-description-editor.html
 ```
 
 Struktur:
 
 ```
-src/core/   pure functions tanpa DOM: text, names, parser, writer, validator, diff, csv, bulk, items
-src/ui/     DOM: app (state), input-panel, grid, tools (CSV/bulk/replace), output-panel, storage, dom
+src/core/   pure functions tanpa DOM: text, names, parser, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
+src/ai/     klien AI BYOK (Gemini, Claude) lewat fetch; dipanggil hanya dari src/ui/ai.js
+src/ui/     DOM: app (state), input-panel, grid, tools (Excel/bulk/replace), ai (pengaturan, ✨, isi massal), output-panel, storage, dom
 src/index.html, src/styles.css   template; build.mjs meng-inline CSS dan JS ke satu file
 test/       node:test + fixtures (TAB asli, lihat .editorconfig dan .gitattributes)
 reference/  prototipe Python algoritma parser (hanya acuan, tidak ikut build)
