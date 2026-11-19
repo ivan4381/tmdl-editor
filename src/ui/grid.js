@@ -11,7 +11,6 @@ const PAGE_SIZE = 200;
 const LINE_MAX = 300;
 const SUMMARY_LINES = 3;
 const LONG_DESC = 500;
-const TYPE_ICON = { table: 'T', column: 'C', measure: 'M' };
 const TYPE_LABEL = { table: 'Tabel', column: 'Kolom', measure: 'Measure' };
 
 /**
@@ -294,7 +293,7 @@ export function initGrid(app, root) {
 
     const row = h('tr', { class: 'row t-' + it.type, dataset: { key: it.key } },
       h('td', { class: 'c-sel' }, cb),
-      h('td', { class: 'c-type' }, h('span', { class: 'type-badge ' + it.type, title: TYPE_LABEL[it.type], text: TYPE_ICON[it.type] })),
+      h('td', { class: 'c-type' }, h('span', { class: 'type-badge ' + it.type, text: TYPE_LABEL[it.type] })),
       nameCell,
       h('td', { class: 'c-dtype', text: it.dataType || '' }),
       h('td', { class: 'c-expr' }, exprCell),

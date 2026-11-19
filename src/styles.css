@@ -19,8 +19,8 @@
   --add-bg: #e6f6ec;
   --del-bg: #fdecea;
   --t-table: #6941c6;
-  --t-column: #0e7490;
-  --t-measure: #b54708;
+  --t-column: #0b6580;
+  --t-measure: #9a3c06;
   --radius: 8px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -218,7 +218,7 @@ table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-wi
 .grid td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .grid tr:last-child td { border-bottom: none; }
 .c-sel { width: 34px; }
-.c-type { width: 46px; }
+.c-type { width: 84px; }
 .c-name { width: 22%; word-break: break-word; }
 .c-dtype { width: 86px; font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
 .c-expr { width: 24%; }
@@ -228,12 +228,14 @@ table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-wi
 .row.is-changed td:first-child { box-shadow: inset 3px 0 0 var(--changed); }
 .row.is-readonly { opacity: 0.75; }
 .type-badge {
-  display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 5px;
-  font: 700 11px var(--mono); color: #fff;
+  display: inline-block; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  font: 500 11.5px/1.4 var(--mono);
+  color: var(--chip-fg); background: color-mix(in srgb, var(--chip-fg) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--chip-fg) 30%, var(--surface));
 }
-.type-badge.table { background: var(--t-table); }
-.type-badge.column { background: var(--t-column); }
-.type-badge.measure { background: var(--t-measure); }
+.type-badge.table { --chip-fg: var(--t-table); }
+.type-badge.column { --chip-fg: var(--t-column); }
+.type-badge.measure { --chip-fg: var(--t-measure); }
 .table-prefix { color: var(--muted); }
 .obj-name { font-weight: 500; }
 pre.expr {

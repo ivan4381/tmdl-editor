@@ -28,8 +28,8 @@
   --add-bg: #e6f6ec;
   --del-bg: #fdecea;
   --t-table: #6941c6;
-  --t-column: #0e7490;
-  --t-measure: #b54708;
+  --t-column: #0b6580;
+  --t-measure: #9a3c06;
   --radius: 8px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -227,7 +227,7 @@ table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-wi
 .grid td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .grid tr:last-child td { border-bottom: none; }
 .c-sel { width: 34px; }
-.c-type { width: 46px; }
+.c-type { width: 84px; }
 .c-name { width: 22%; word-break: break-word; }
 .c-dtype { width: 86px; font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
 .c-expr { width: 24%; }
@@ -237,12 +237,14 @@ table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-wi
 .row.is-changed td:first-child { box-shadow: inset 3px 0 0 var(--changed); }
 .row.is-readonly { opacity: 0.75; }
 .type-badge {
-  display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 5px;
-  font: 700 11px var(--mono); color: #fff;
+  display: inline-block; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  font: 500 11.5px/1.4 var(--mono);
+  color: var(--chip-fg); background: color-mix(in srgb, var(--chip-fg) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--chip-fg) 30%, var(--surface));
 }
-.type-badge.table { background: var(--t-table); }
-.type-badge.column { background: var(--t-column); }
-.type-badge.measure { background: var(--t-measure); }
+.type-badge.table { --chip-fg: var(--t-table); }
+.type-badge.column { --chip-fg: var(--t-column); }
+.type-badge.measure { --chip-fg: var(--t-measure); }
 .table-prefix { color: var(--muted); }
 .obj-name { font-weight: 500; }
 pre.expr {
@@ -1765,7 +1767,7 @@ function initTools(app, bar, ctx) {
       if (res.changed.length) {
         out.push(h('h3', { text: 'Perubahan' }), h('div', { class: 'change-list' },
           res.changed.slice(0, 100).map((c) => h('div', { class: 'change' },
-            h('div', { class: 'change-name' }, h('span', { class: 'type-badge ' + c.item.type, text: c.item.type[0].toUpperCase() }), ` ${c.item.table} › ${c.item.name}`),
+            h('div', { class: 'change-name' }, h('span', { class: 'type-badge ' + c.item.type, text: TYPE_LABEL[c.item.type] }), ` ${c.item.table} › ${c.item.name}`),
             h('div', { class: 'change-from', text: c.from ? truncate(c.from, 300) : '(kosong)' }),
             h('div', { class: 'change-to', text: c.to ? truncate(c.to, 300) : '(dihapus)' }))),
           res.changed.length > 100 ? h('p', { class: 'muted', text: `…dan ${fmt(res.changed.length - 100)} lagi` }) : null));
@@ -1895,6 +1897,8 @@ function initTools(app, bar, ctx) {
   return { refresh };
 }
 
+const TYPE_LABEL = { table: 'Tabel', column: 'Kolom', measure: 'Measure' };
+
 function stat(n, label) {
   return h('div', { class: 'stat' }, h('strong', { text: fmt(n) }), h('span', { text: label }));
 }
@@ -1922,7 +1926,6 @@ const PAGE_SIZE = 200;
 const LINE_MAX = 300;
 const SUMMARY_LINES = 3;
 const LONG_DESC = 500;
-const TYPE_ICON = { table: 'T', column: 'C', measure: 'M' };
 const TYPE_LABEL = { table: 'Tabel', column: 'Kolom', measure: 'Measure' };
 
 /**
@@ -2205,7 +2208,7 @@ function initGrid(app, root) {
 
     const row = h('tr', { class: 'row t-' + it.type, dataset: { key: it.key } },
       h('td', { class: 'c-sel' }, cb),
-      h('td', { class: 'c-type' }, h('span', { class: 'type-badge ' + it.type, title: TYPE_LABEL[it.type], text: TYPE_ICON[it.type] })),
+      h('td', { class: 'c-type' }, h('span', { class: 'type-badge ' + it.type, text: TYPE_LABEL[it.type] })),
       nameCell,
       h('td', { class: 'c-dtype', text: it.dataType || '' }),
       h('td', { class: 'c-expr' }, exprCell),

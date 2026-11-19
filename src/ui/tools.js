@@ -98,7 +98,7 @@ export function initTools(app, bar, ctx) {
       if (res.changed.length) {
         out.push(h('h3', { text: 'Perubahan' }), h('div', { class: 'change-list' },
           res.changed.slice(0, 100).map((c) => h('div', { class: 'change' },
-            h('div', { class: 'change-name' }, h('span', { class: 'type-badge ' + c.item.type, text: c.item.type[0].toUpperCase() }), ` ${c.item.table} › ${c.item.name}`),
+            h('div', { class: 'change-name' }, h('span', { class: 'type-badge ' + c.item.type, text: TYPE_LABEL[c.item.type] }), ` ${c.item.table} › ${c.item.name}`),
             h('div', { class: 'change-from', text: c.from ? truncate(c.from, 300) : '(kosong)' }),
             h('div', { class: 'change-to', text: c.to ? truncate(c.to, 300) : '(dihapus)' }))),
           res.changed.length > 100 ? h('p', { class: 'muted', text: `…dan ${fmt(res.changed.length - 100)} lagi` }) : null));
@@ -227,6 +227,8 @@ export function initTools(app, bar, ctx) {
   refresh();
   return { refresh };
 }
+
+const TYPE_LABEL = { table: 'Tabel', column: 'Kolom', measure: 'Measure' };
 
 function stat(n, label) {
   return h('div', { class: 'stat' }, h('strong', { text: fmt(n) }), h('span', { text: label }));
