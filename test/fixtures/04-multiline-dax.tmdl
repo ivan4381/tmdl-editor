@@ -1,0 +1,24 @@
+createOrReplace
+
+	table Sales
+
+		measure 'Sales YTD' =
+					/// komentar DAX, BUKAN deskripsi
+					VAR x = 1
+					column Fake
+					measure Fake2 = 1
+					table FakeTable
+					RETURN TOTALYTD([Total Sales], 'Date'[Date])
+			formatString: #,0
+
+		measure Second =
+					
+					/// komentar lain
+					SUM(Sales[Amount])
+
+			lineageTag: 3333
+
+		measure Third =
+					1
+					/// komentar di baris terakhir ekspresi
+		measure Fourth = 4

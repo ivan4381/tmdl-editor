@@ -1,0 +1,2 @@
+# Fixtures must keep their exact bytes (tabs, CRLF, BOM).
+test/fixtures/*.tmdl -text

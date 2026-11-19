@@ -1,0 +1,20 @@
+createOrReplace
+
+	/// Tabel fakta penjualan
+	table Sales
+		lineageTag: 1111
+
+		/// Kunci pelanggan
+		column CustomerKey
+			dataType: int64
+			sourceColumn: CustomerKey
+
+		/// Baris pertama
+		///
+		/// Baris ketiga setelah baris kosong
+		measure 'Total Sales' = SUM(Sales[Amount])
+			formatString: #,0
+
+		///Tanpa spasi setelah slash
+		measure Qty = SUM(Sales[Qty])
+			formatString: 0

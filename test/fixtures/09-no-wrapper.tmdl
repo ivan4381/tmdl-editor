@@ -1,0 +1,20 @@
+/// Dimensi produk
+table Product
+	lineageTag: abc
+
+	column ProductKey
+		dataType: int64
+		isHidden
+		sourceColumn: ProductKey
+
+	column 'Product Name'
+		dataType: string
+		sourceColumn: Product Name
+
+	measure '# Products' = COUNTROWS(Product)
+
+	partition Product = m
+		mode: import
+		source = Sql.Database("srv", "db")
+
+	annotation PBI_ResultType = Table

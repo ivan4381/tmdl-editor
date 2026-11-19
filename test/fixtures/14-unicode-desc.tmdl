@@ -1,0 +1,7 @@
+createOrReplace
+
+	/// Penjualan 🚀 "harian" — tahun berjalan
+	table Penjualan
+		column Nilai
+			dataType: decimal
+		measure 'Rata-rata' = AVERAGE(Penjualan[Nilai])

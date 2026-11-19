@@ -1,0 +1,10 @@
+CreateOrReplace
+
+	Table Sales
+		MEASURE 'X' = 1
+		Column Y
+			DataType: int64
+			IsHidden
+
+	REF TABLE Other
+		measure Z = 1

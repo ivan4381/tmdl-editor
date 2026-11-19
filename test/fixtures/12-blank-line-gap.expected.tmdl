@@ -1,0 +1,14 @@
+createOrReplace
+
+	/// komentar lepas, ada baris kosong setelahnya
+
+	/// Desc Sales
+	table Sales
+
+		/// terpisah blank line, bukan deskripsi A
+
+		/// Desc A
+		measure A = 1
+
+		/// ini deskripsi B
+		measure B = 2

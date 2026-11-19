@@ -1,0 +1,7 @@
+createOrReplace
+
+	ref table Sales
+
+		/// Total
+		measure 'Total Sales' = SUM(Sales[Amount])
+			formatString: #,0

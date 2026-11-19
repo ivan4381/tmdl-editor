@@ -1,0 +1,20 @@
+createOrReplace
+
+	/// Tabel fakta penjualan (diubah)
+	table Sales
+		lineageTag: 1111
+
+		column CustomerKey
+			dataType: int64
+			sourceColumn: CustomerKey
+
+		/// Satu baris saja
+		measure 'Total Sales' = SUM(Sales[Amount])
+			formatString: #,0
+
+		/// Baris satu
+		///
+		/// Baris tiga
+		///   terindentasi
+		measure Qty = SUM(Sales[Qty])
+			formatString: 0

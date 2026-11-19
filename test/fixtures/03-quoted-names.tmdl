@@ -1,0 +1,14 @@
+createOrReplace
+
+	table 'Sales Fact'
+		measure 'Total Sales' = SUM('Sales Fact'[Amount])
+		column 'Cust''s Name'
+			dataType: string
+		column 'a.b'
+			dataType: string
+		column 'x=y'
+			dataType: string
+		column 'key: value'
+			dataType: string
+		column Plain_Name-1&2
+			dataType: string

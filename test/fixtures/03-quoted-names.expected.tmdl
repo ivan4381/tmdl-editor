@@ -1,0 +1,19 @@
+createOrReplace
+
+	/// Tabel 'fakta'
+	table 'Sales Fact'
+		measure 'Total Sales' = SUM('Sales Fact'[Amount])
+		/// Nama pelanggan
+		column 'Cust''s Name'
+			dataType: string
+		/// Titik
+		column 'a.b'
+			dataType: string
+		/// Sama dengan
+		column 'x=y'
+			dataType: string
+		column 'key: value'
+			dataType: string
+		/// Tanpa kutip
+		column Plain_Name-1&2
+			dataType: string

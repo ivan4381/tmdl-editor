@@ -1,0 +1,313 @@
+createOrReplace
+
+	model Model
+		culture: en-US
+		defaultPowerBIDataSourceVersion: powerBI_V3
+		sourceQueryCulture: en-ID
+		dataAccessOptions
+			fastCombine
+			legacyRedirects
+			returnErrorValuesAsNull
+
+		/// Date Table (Kalender)
+		table Calendar
+			lineageTag: a302659a-b655-42d3-b015-0a9733960768
+			dataCategory: Time
+
+			/// Tanggal lengkap dalam kalender
+			column Date
+				isKey
+				formatString: dd/mm/yyyy
+				lineageTag: eef4c30b-79fd-43cc-a0cf-eedcebb7aef6
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [Date]
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation UnderlyingDateTimeDataType = Date
+
+				annotation PBI_FormatHint = {"isCustom":true}
+
+			/// Nomor bulan dalam tahun (1-12)
+			column Month
+				formatString: 0
+				lineageTag: 90d00878-80c3-47dd-afe3-e79506fe589f
+				summarizeBy: sum
+				isNameInferred
+				sourceColumn: [Month]
+
+				annotation SummarizationSetBy = Automatic
+
+		/// Tabel kalkulasi tanpa data, digunakan sebagai wadah seluruh DAX measures dalam semantic model ini
+		table 'Measures Table'
+			lineageTag: 1abd39bc-7510-43e9-b9c5-a5dacbfdf60f
+
+			/// Jumlah total DOT dari kolom Quantity pada tabel FactDOT
+			measure 'OT Terminal Not Adjusted' =
+					
+					SUM ( Fact_OT_SPBE[DOT (MT)] )
+				displayFolder: Key Metrics
+				lineageTag: 00283280-0cca-4114-9393-2c6d0813340b
+
+				formatStringDefinition = "#,0"
+
+			/// Menampilkan status pengisian realisasi berdasarkan MOR yang belum melakukan input hingga kemarin
+			measure 'Label status pengisian realisasi' = ```
+					
+					VAR _Now = NOW() + TIME(7, 0, 0)  -- koreksi UTC ke WIB
+					VAR _Today = DATE(YEAR(_Now), MONTH(_Now), DAY(_Now))
+					VAR _Yesterday = _Today - 1
+					VAR _TempTable =
+					    ADDCOLUMNS(
+					        VALUES(Dim_Supply_Point[MOR Tujuan Supply]),
+					        "Max Date", CALCULATE(MAX('VL06F+MB51'[Tanggal])),
+					        "Selisih Hari", DATEDIFF(CALCULATE(MAX('VL06F+MB51'[Tanggal])), _Yesterday, DAY)
+					    )
+					VAR _FilteredTable =
+					    FILTER(
+					        _TempTable,
+					        [Selisih Hari] > 0
+					    )
+					VAR _ListMOR =
+					    CONCATENATEX(
+					        _FilteredTable,
+					        [MOR Tujuan Supply],
+					        ", ", [MOR Tujuan Supply]
+					    )
+					RETURN 
+					    IF(
+					        _ListMOR <> BLANK(), 
+					        "Realisasi " & _ListMOR & " belum lengkap terisi s/d " & FORMAT(_Yesterday, "dd mmmm yyyy", "id"),
+					        "Realisasi sudah lengkap terisi s/d " & FORMAT(_Yesterday, "dd mmmm yyyy", "id")
+					    )
+					```
+				displayFolder: Helper & CF\Labels
+				lineageTag: d6233ca8-5ba3-4f7b-a7ed-beea4e8d91c8
+
+			/// Membuat kolom kosong untuk peformance indicator di visual Tabel di page Detail Performance SPBE (JANGAN DIHAPUS)
+			measure 'SPBE Performance Indicator' = ```
+					"" 
+					```
+				lineageTag: 04577d75-559b-4daf-af94-faf8f8bdd9d3
+
+			partition 'Measures Table' = m
+				mode: import
+				source =
+						let
+						    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMlSKjQUA", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Column1 = _t]),
+						    #"Removed Columns" = Table.RemoveColumns(Source,{"Column1"})
+						in
+						    #"Removed Columns"
+
+		/// Waktu refresh PBI terakhir (WIB)
+		table 'Last Refresh'
+			isHidden
+			lineageTag: 109a5cff-2105-4fe7-8b36-f395e715b44c
+
+			column Timestamp
+				dataType: dateTime
+				formatString: General Date
+				lineageTag: 330832cd-67e6-4136-9895-551365512106
+				summarizeBy: none
+				sourceColumn: Timestamp
+
+				annotation SummarizationSetBy = Automatic
+
+			partition 'Last Refresh' = m
+				mode: import
+				source =
+						let
+						    // Membuat tabel 1 baris berisi timestamp WIB (UTC+7) dengan kolom "Timestamp" bertipe datetimezone secara langsung
+						    Source =
+						        #table(
+						            type table [Timestamp = datetimezone],
+						            {{ DateTimeZone.SwitchZone(DateTimeZone.UtcNow(), +7) }}
+						        )
+						in
+						    Source
+
+			changedProperty = IsHidden
+
+			annotation PBI_NavigationStepName = Navigation
+
+			annotation PBI_ResultType = Table
+
+		/// Tabel fakta realisasi pengiriman LPG dari terminal ke SPBE, digabung dari laporan outbound delivery (VL06F) dan goods movement (MB51) SAP
+		table VL06F+MB51
+			lineageTag: d94e911d-a274-4b01-bfa1-42c54b80525c
+
+			/// Kolom kalkulasi — flag teks penanda apakah transaksi merupakan supply ke SPBE
+			column FlagSupplySPBE = ```
+					
+					VAR _IsSupplySPBE =
+					IF(
+					    RELATED(Dim_SPBE[Jenis]) = "INDUSTRI"  , 
+					        SWITCH( TRUE(), 
+					            RELATED(Dim_Supply_Point[Status]) = "SPBE Hub" || RELATED(Dim_Supply_Point[Status]) = "SPBE suplai kapal", 0,
+					            1),
+					    1
+					)
+					RETURN FORMAT(_IsSupplySPBE, "Yes/No")
+					```
+				lineageTag: d06af603-178d-4ef9-8987-2fbc80aea7fb
+				summarizeBy: none
+
+				annotation SummarizationSetBy = Automatic
+
+			partition VL06F+MB51 = m
+				mode: import
+				queryGroup: 'Fact Tables'
+				source =
+						let
+						    // Query ini menggabungkan tiga sumber data transaksi (Staging_MB51, KonsinyasiSPBE, Industri)
+						    // menjadi satu Fact Table utama, lalu menyaring baris dengan kuantitas nol
+						
+						    // Menggabungkan tiga tabel sumber menjadi satu tabel (union, bukan join)
+						    Source = Table.Combine({Staging_MB51, KonsinyasiSPBE, Industri}),
+						
+						    // ⚠️ RISIKO: Table.Combine mengasumsikan ketiga tabel sumber memiliki struktur kolom (nama & urutan) yang sama.
+						    // Jika salah satu sumber berubah struktur kolomnya, hasil combine bisa salah kolom atau gagal
+						    // Menyaring hanya baris dengan Quantity (MT) tidak sama dengan nol
+						    Filter_NonZeroQuantity = Table.SelectRows(Source, each [#"Quantity (MT)"] <> 0)
+						
+						in
+						    Filter_NonZeroQuantity
+
+		relationship AutoDetected_9dcde00e-7dea-48fb-af3c-63b53977ffce
+			fromColumn: Fact_Justifikasi.'Kode Plant'
+			toColumn: Dim_Supply_Point.'Kode Plant'
+
+		relationship e2a88aec-b1cd-064c-dda8-396cc9965db7
+			fromColumn: Fact_OT_SPBE.'Ship to'
+			toColumn: Dim_SPBE.'SH Key'
+
+		cultureInfo en-US
+
+			linguisticMetadata = {"Version":"4.1.0","Language":"en-US","Entities":{}}
+				contentType: json
+
+		/// Folder Sharepoint VL06F & MB51 (untuk development & production)
+		expression RootFolder = "ExampleSite" meta [IsParameterQuery = true, IsParameterQueryRequired = true, Type = type text, List = {"ExampleSite", "PowerBISourceFile"}, DefaultValue = "PowerBISourceFile"]
+			lineageTag: 5c97e368-2f7d-4f60-b9b9-2001d332384c
+			queryGroup: 'Functions & Parameters'
+
+			annotation PBI_NavigationStepName = Navigation
+
+			annotation PBI_ResultType = Text
+
+		expression Mapping_Lintas =
+				let
+				    // Mengambil tabel Tabel_Industri_Lintas_Region langsung dari file Excel di SharePoint
+				    Source = Excel.Workbook(
+				        SharePoint.Contents("https://contoso.sharepoint.com/sites/Example", [ApiVersion = 15])
+				        {[Name="Shared Documents"]}[Content]
+				        {[Name="Data Demand LPG"]}[Content]
+				        {[Name="Data Supply Point LPG.xlsx"]}[Content]
+				    ){[Item="Tabel_Industri_Lintas_Region", Kind="Table"]}[Data]
+				
+				in
+				    Source
+			lineageTag: 189c3560-4d7a-4e3e-ac73-f6c0ad4d9049
+			queryGroup: 'Dimension Tables'
+
+			annotation PBI_NavigationStepName = Navigation
+
+			annotation PBI_ResultType = Table
+
+		expression 'Fn Transform DOT' = ```
+				let
+				    fnTransformDOT = (InputTable as table) as table =>
+				    let
+				        // Langkah 1: Hapus baris yang Column1 = "Ship to"
+				        #"Filter_Remove Row 2" = Table.SelectRows(
+				            InputTable, 
+				            each [Column1] <> "Ship to"
+				        ),
+				
+				        // Langkah 2: Jadikan baris pertama sebagai header
+				        #"Promoted Headers" = Table.PromoteHeaders(
+				            #"Filter_Remove Row 2", 
+				            [PromoteAllScalars=true]
+				        ),
+				
+				        // Langkah 3: Unpivot semua kolom kecuali Column1, Column2 dan Column3
+				        #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(
+				            #"Promoted Headers", 
+				            {"Column1", "Column2", "Column3"}, 
+				            "Attribute", 
+				            "Value"
+				        ),
+				
+				        // Langkah 4: Konversi kolom Attribute → Int64 → Date
+				        #"Convert Date" = Table.TransformColumnTypes(
+				            Table.TransformColumnTypes(
+				                #"Unpivoted Other Columns",
+				                {{"Attribute", Int64.Type}}
+				            ),
+				            {{"Attribute", type date}}
+				        ),
+				
+				        // Langkah 5: Ubah nama kolom
+				        #"Renamed Columns" = Table.RenameColumns(
+				            #"Convert Date",
+				            {
+				                {"Column1", "Ship to"}, 
+				                {"Column2", "Nama SP(P)BE"},
+				                {"Column3", "Supply Point"}, 
+				                {"Attribute", "Tanggal"}, 
+				                {"Value", "DOT (MT)"}
+				            }
+				        ),
+				
+				        // Langkah 6: Bulatkan kolom DOT (MT) menjadi 3 angka desimal
+				        #"Rounded Off" = Table.TransformColumns(
+				            #"Renamed Columns",
+				            {{"DOT (MT)", each Number.Round(_, 3), type number}}
+				        ),
+				
+				        //Ekstrak Kode Plant Supply Point
+				        #"Extract Kode Supply Point" = Table.TransformColumns(#"Rounded Off", {{"Supply Point", each Text.BeforeDelimiter(_, "-"), type text}})
+				
+				    in
+				        #"Extract Kode Supply Point"
+				
+				in
+				    fnTransformDOT
+				```
+			lineageTag: 6d202312-4e54-4857-a742-fb3239137561
+			queryGroup: 'Functions & Parameters'
+
+			annotation PBI_ResultType = Function
+
+			annotation PBI_NavigationStepName = Navigation
+
+		queryGroup 'Fact Tables'
+
+			annotation PBI_QueryGroupOrder = 3
+
+		queryGroup Staging
+
+			annotation PBI_QueryGroupOrder = 0
+
+		queryGroup 'Dimension Tables'
+
+			annotation PBI_QueryGroupOrder = 2
+
+		queryGroup Staging\VL06F
+
+			annotation PBI_QueryGroupOrder = 0
+
+		/// Custom Functions untuk Transformasi & Parameters
+		queryGroup 'Functions & Parameters'
+
+			annotation PBI_QueryGroupOrder = 4
+
+		annotation __PBI_TimeIntelligenceEnabled = 0
+
+		annotation PBI_QueryOrder = ["VL06F+MB51","Fact_Justifikasi","Fact_OT_SPBE","Staging_MB51","List_Supply_Point","Fn Transform DOT","Fn Transform Plant Supply Lintas Region","Fn Transform Plant Pengirim","RootFolder","Mapping_Plant_Lintas","Mapping_Terminal_Lintas_Region","Mapping_Special_Supply_Point","Measures Table","Dim_Supply_Point","Dim_SPBE","Last Refresh","FactSalesOut","Mapping_Plant","Mapping_Lintas","KonsinyasiSPBE","Industri","Dim_Kuota_PSO"]
+
+		annotation PBI_ProTooling = ["DaxQueryView_Desktop","WebModelingEdit","TMDLView_Desktop","MCP-PBIModeling"]
+
+		annotation __PBI_ServiceStoredInTmdl = reserved
+

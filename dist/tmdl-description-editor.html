@@ -1,0 +1,3105 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>TMDL Description Editor</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dde1e7;
+  --border-strong: #c4cad3;
+  --text: #1c2330;
+  --muted: #5f6b7a;
+  --accent: #2357d9;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e6edfc;
+  --ok: #1b7f4c;
+  --ok-soft: #e3f4ea;
+  --warn: #9a5b00;
+  --warn-soft: #fdf1dc;
+  --error: #b42318;
+  --error-soft: #fde8e6;
+  --changed: #c27803;
+  --add-bg: #e6f6ec;
+  --del-bg: #fdecea;
+  --t-table: #6941c6;
+  --t-column: #0e7490;
+  --t-measure: #b54708;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218;
+    --surface: #171b23;
+    --surface-2: #1e232d;
+    --border: #2c3340;
+    --border-strong: #3b4454;
+    --text: #e6e9ef;
+    --muted: #9aa4b2;
+    --accent: #7aa2ff;
+    --accent-contrast: #0b1020;
+    --accent-soft: #1d2a4a;
+    --ok: #4cc38a;
+    --ok-soft: #12291e;
+    --warn: #f0b44c;
+    --warn-soft: #2e2412;
+    --error: #ff7a6e;
+    --error-soft: #34171a;
+    --changed: #f0b44c;
+    --add-bg: #11291c;
+    --del-bg: #351a1c;
+    --t-table: #b69cff;
+    --t-column: #5ccfe6;
+    --t-measure: #ffa860;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.mono { font-family: var(--mono); }
+code, kbd { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0; }
+h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+.brand-mark { font-family: var(--mono); color: var(--accent); font-weight: 700; }
+.steps { display: flex; gap: 4px; }
+.step {
+  border: 1px solid transparent; background: none; padding: 6px 12px; border-radius: 999px;
+  cursor: pointer; color: var(--muted); font-weight: 500;
+}
+.step:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.step.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
+.step:disabled { opacity: 0.45; cursor: not-allowed; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.doc-switch select { max-width: 240px; }
+.progress { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.progress-bar { width: 120px; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+.progress-bar span { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.2s; }
+.progress-text { font-size: 12px; color: var(--muted); }
+
+main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+
+/* ---------- generic ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px;
+}
+.card-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-head p { margin: 0; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+  padding: 7px 14px; border-radius: 6px; cursor: pointer; font-weight: 500;
+}
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.ghost:hover:not(:disabled) { color: var(--text); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.icon-btn { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.link-btn { border: none; background: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 12px; }
+.link-btn:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+select, input[type="text"], input[type="search"] {
+  border: 1px solid var(--border-strong); background: var(--surface); border-radius: 6px; padding: 6px 8px;
+}
+.tag {
+  display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: middle; font-weight: 500;
+}
+.tag.tiny { font-size: 10px; padding: 0 5px; }
+.tag.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.banner { border-radius: 6px; padding: 10px 12px; margin: 8px 0; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; border: 1px solid transparent; }
+.banner > span:first-child { flex: 1 1 300px; }
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+.banner.error { background: var(--error-soft); color: var(--error); display: block; }
+.banner.warn { background: var(--warn-soft); color: var(--warn); display: block; }
+.banner.info { background: var(--accent-soft); color: var(--text); border-color: var(--accent-soft); }
+.banner-actions { display: flex; gap: 6px; }
+.banner ul.errors { margin: 8px 0 0; padding-left: 18px; color: var(--text); }
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; box-shadow: var(--shadow); max-width: 90vw;
+}
+.toast[data-kind="error"] { background: var(--error); color: #fff; }
+.toast[data-kind="ok"] { background: var(--ok); color: #fff; }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.field > span { font-weight: 500; font-size: 13px; }
+.field textarea, .field input, .field select { width: 100%; }
+
+/* ---------- input ---------- */
+.input-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.input-text {
+  width: 100%; min-height: 52vh; resize: vertical; tab-size: 4;
+  font: 12.5px/1.5 var(--mono); padding: 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-2);
+  white-space: pre; overflow: auto;
+}
+.dropzone {
+  margin-top: 10px; padding: 14px; border: 2px dashed var(--border-strong); border-radius: 6px; text-align: center;
+  color: var(--muted); cursor: pointer;
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; }
+.chip-x { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 14px; }
+.summary-card { padding: 14px; }
+.summary-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.summary-title strong { margin-right: 4px; word-break: break-all; }
+.summary-counts { margin: 6px 0 0; font-size: 15px; }
+.warnings { margin: 8px 0 0; padding-left: 18px; color: var(--warn); font-size: 13px; }
+
+/* ---------- edit ---------- */
+.edit-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.sidebar {
+  position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+}
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 8px; }
+.side-head select { font-size: 12px; padding: 3px 6px; max-width: 150px; }
+.side-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 8px;
+  width: 100%; text-align: left; border: none; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.side-item:hover { background: var(--surface-2); }
+.side-item.active { background: var(--accent-soft); }
+.side-item.special { margin-bottom: 6px; border: 1px solid var(--border); }
+.side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.side-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.side-bar { grid-column: 1 / -1; height: 3px; background: var(--surface-2); border-radius: 999px; margin-top: 4px; overflow: hidden; }
+.side-bar > span { display: block; height: 100%; background: var(--ok); width: 0; }
+.side-item.complete .side-count { color: var(--ok); }
+.side-item.has-changes .side-name::after { content: " •"; color: var(--changed); }
+
+.editor { min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.search { flex: 1 1 260px; min-width: 200px; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg-btn { border: none; background: var(--surface); padding: 6px 10px; cursor: pointer; border-right: 1px solid var(--border); }
+.seg-btn:last-child { border-right: none; }
+.seg-btn.active { background: var(--accent); color: var(--accent-contrast); }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.tools .spacer { flex: 1; }
+.view-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin: 6px 0 8px; }
+.grid-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 860px; }
+.grid th {
+  position: sticky; top: 0; background: var(--surface-2); text-align: left; font-size: 12px; font-weight: 600; color: var(--muted);
+  padding: 8px; border-bottom: 1px solid var(--border); z-index: 1;
+}
+.grid td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.grid tr:last-child td { border-bottom: none; }
+.c-sel { width: 34px; }
+.c-type { width: 46px; }
+.c-name { width: 22%; word-break: break-word; }
+.c-dtype { width: 86px; font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+.c-expr { width: 24%; }
+.c-desc { width: auto; }
+.row.t-table td { background: color-mix(in srgb, var(--t-table) 5%, var(--surface)); }
+.row.t-table .obj-name { font-weight: 700; }
+.row.is-changed td:first-child { box-shadow: inset 3px 0 0 var(--changed); }
+.row.is-readonly { opacity: 0.75; }
+.type-badge {
+  display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 5px;
+  font: 700 11px var(--mono); color: #fff;
+}
+.type-badge.table { background: var(--t-table); }
+.type-badge.column { background: var(--t-column); }
+.type-badge.measure { background: var(--t-measure); }
+.table-prefix { color: var(--muted); }
+.obj-name { font-weight: 500; }
+pre.expr {
+  margin: 0; font: 11.5px/1.4 var(--mono); color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  max-height: 4.4em; overflow: hidden;
+}
+pre.expr.expanded { max-height: 420px; overflow: auto; }
+textarea.desc {
+  width: 100%; min-height: 34px; resize: vertical; overflow: hidden; padding: 6px 8px; line-height: 1.4;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface);
+}
+textarea.desc:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.row.is-empty textarea.desc:not(:focus) { background: var(--surface-2); }
+.row.is-changed textarea.desc { border-color: var(--changed); }
+textarea.desc:disabled { background: var(--surface-2); cursor: not-allowed; }
+.desc-meta { display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-height: 18px; font-size: 11px; }
+.changed-mark, .reset { visibility: hidden; }
+.row.is-changed .changed-mark, .row.is-changed .reset { visibility: visible; }
+.changed-mark { color: var(--changed); font-weight: 600; }
+.len-warn { color: var(--warn); }
+.empty-state { padding: 40px; text-align: center; color: var(--muted); }
+.pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 12px 0; }
+.kbd-hint { font-size: 12px; text-align: center; }
+
+/* ---------- output ---------- */
+.diff { font: 12px/1.5 var(--mono); border: 1px solid var(--border); border-radius: 6px; overflow: auto; max-height: 70vh; }
+.hunk { border-bottom: 1px dashed var(--border-strong); }
+.hunk:last-child { border-bottom: none; }
+.dl { display: grid; grid-template-columns: 52px 52px 18px minmax(0, 1fr); }
+.dl .ln { color: var(--muted); text-align: right; padding-right: 8px; user-select: none; background: var(--surface-2); }
+.dl .sign { text-align: center; user-select: none; }
+.dl .code { white-space: pre; padding-right: 12px; tab-size: 4; }
+.dl.add { background: var(--add-bg); }
+.dl.del { background: var(--del-bg); }
+.dl.add .sign { color: var(--ok); }
+.dl.del .sign { color: var(--error); }
+.guide { margin-top: 12px; }
+.guide summary { cursor: pointer; font-weight: 600; }
+.guide ol { margin: 8px 0 0; padding-left: 20px; }
+.doc-list { list-style: none; padding: 0; margin: 8px 0 0; }
+.doc-list li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.doc-list li .btn { margin-left: auto; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--ok); }
+.dot.error { background: var(--error); }
+
+/* ---------- modal ---------- */
+dialog {
+  border: 1px solid var(--border); border-radius: 10px; padding: 0; width: min(720px, calc(100vw - 32px));
+  background: var(--surface); color: var(--text); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+dialog::backdrop { background: rgba(10, 14, 22, 0.45); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.modal-body { padding: 4px 16px 16px; max-height: 75vh; overflow: auto; }
+.tpl { font: inherit; padding: 8px; border: 1px solid var(--border-strong); border-radius: 6px; resize: vertical; background: var(--surface); }
+.preview { font-size: 13px; background: var(--surface-2); border-radius: 6px; padding: 8px; margin-top: 4px; min-height: 30px; }
+.preview-row { padding: 2px 0; word-break: break-word; }
+.stat-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.stat { background: var(--surface-2); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 90px; }
+.stat strong { font-size: 20px; }
+.stat span { font-size: 12px; color: var(--muted); }
+.change-list { display: flex; flex-direction: column; gap: 8px; }
+.change { border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; }
+.change-name { font-weight: 600; margin-bottom: 4px; }
+.change-from { color: var(--error); text-decoration: line-through; white-space: pre-wrap; }
+.change-to { color: var(--ok); white-space: pre-wrap; }
+.small-list { font-size: 12px; max-height: 200px; overflow: auto; }
+
+@media (max-width: 900px) {
+  .input-layout, .edit-layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: 40vh; }
+  .topbar-right { margin-left: 0; width: 100%; }
+  main { padding: 12px; }
+}
+
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">///</span>
+      <span class="brand-name">TMDL Description Editor</span>
+    </div>
+    <nav class="steps" role="tablist" aria-label="Langkah">
+      <button class="step" role="tab" data-step="input" id="tab-input" aria-controls="panel-input">1. Input</button>
+      <button class="step" role="tab" data-step="edit" id="tab-edit" aria-controls="panel-edit" disabled>2. Edit</button>
+      <button class="step" role="tab" data-step="output" id="tab-output" aria-controls="panel-output" disabled>3. Output</button>
+    </nav>
+    <div class="topbar-right">
+      <label class="doc-switch" id="doc-switch" hidden>
+        <span class="sr-only">Dokumen aktif</span>
+        <select id="doc-select"></select>
+      </label>
+      <div class="progress" id="progress-total" hidden>
+        <div class="progress-bar"><span id="progress-fill"></span></div>
+        <span class="progress-text" id="progress-text"></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="panel-input" role="tabpanel" aria-labelledby="tab-input"></section>
+    <section class="panel" id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" hidden></section>
+    <section class="panel" id="panel-output" role="tabpanel" aria-labelledby="tab-output" hidden></section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="modal"></dialog>
+</div>
+<script>
+(function () {
+'use strict';
+var __mods = Object.create(null), __cache = Object.create(null);
+function __def(id, fn) { __mods[id] = fn; }
+function __req(id) {
+  if (__cache[id]) return __cache[id];
+  var exp = {}; __cache[id] = exp; __mods[id](exp); return exp;
+}
+__def("core/text.js", function (exports) {
+// Text helpers: BOM, EOL, line splitting and indentation measurement.
+// Pure functions, no DOM.
+
+const BOM = '﻿';
+
+/**
+ * @param {string} text
+ * @returns {'\r\n'|'\n'}
+ */
+function detectEol(text) {
+  return text.includes('\r\n') ? '\r\n' : '\n';
+}
+
+/**
+ * Split raw text into the pieces needed for an exact round trip.
+ * @param {string} raw
+ * @returns {{lines:string[], eol:'\r\n'|'\n', hasBom:boolean, trailingNewline:boolean, mixedEol:boolean}}
+ */
+function splitText(raw) {
+  let text = raw;
+  const hasBom = text.startsWith(BOM);
+  if (hasBom) text = text.slice(1);
+  const eol = detectEol(text);
+  const trailingNewline = text.endsWith(eol);
+  if (trailingNewline) text = text.slice(0, text.length - eol.length);
+  const lines = text === '' && !trailingNewline ? [] : text.split(eol);
+  // Mixed EOL: a CRLF file with a lone LF (or an LF file with a lone CR) inside.
+  const mixedEol = eol === '\r\n'
+    ? lines.some((l) => l.includes('\n') || l.includes('\r'))
+    : lines.some((l) => l.includes('\r'));
+  return { lines, eol, hasBom, trailingNewline, mixedEol };
+}
+
+/**
+ * Inverse of splitText.
+ * @param {string[]} lines
+ * @param {{eol:string, hasBom:boolean, trailingNewline:boolean}} meta
+ */
+function joinText(lines, meta) {
+  let out = lines.join(meta.eol);
+  if (meta.trailingNewline) out += meta.eol;
+  if (meta.hasBom) out = BOM + out;
+  return out;
+}
+
+/** Leading whitespace (tabs/spaces) of a line. */
+function leadingWhitespace(line) {
+  let i = 0;
+  while (i < line.length && (line[i] === '\t' || line[i] === ' ')) i++;
+  return line.slice(0, i);
+}
+
+/** True for lines that are empty or whitespace only. */
+function isBlank(line) {
+  return line.trim() === '';
+}
+
+/**
+ * Detect the indentation unit from the first indented, non-blank line.
+ * Tabs → 'tab'. Spaces → width of that first indentation (fallback 4).
+ * @param {string[]} lines
+ * @returns {{kind:'tab'|'space', width:number}}
+ */
+function measureIndent(lines) {
+  for (const line of lines) {
+    if (isBlank(line)) continue;
+    const ws = leadingWhitespace(line);
+    if (ws === '') continue;
+    if (ws[0] === '\t') return { kind: 'tab', width: 1 };
+    return { kind: 'space', width: ws.length };
+  }
+  return { kind: 'tab', width: 1 };
+}
+
+/**
+ * Indentation depth in units. A tab is always one level; spaces count
+ * `width` per level (4 when the file is tab-indented).
+ * @param {string} ws leading whitespace
+ * @param {{kind:'tab'|'space', width:number}} unit
+ */
+function indentDepth(ws, unit) {
+  const spaceWidth = unit.kind === 'space' ? unit.width : 4;
+  let tabs = 0;
+  let spaces = 0;
+  for (const ch of ws) {
+    if (ch === '\t') tabs++;
+    else spaces++;
+  }
+  return tabs + Math.floor(spaces / spaceWidth);
+}
+
+/** Truncate a string for display. */
+function truncate(s, max) {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + '… (+' + (s.length - max) + ' karakter)';
+}
+
+/**
+ * Small, fast, non-cryptographic hash (cyrb53) used to match drafts to input.
+ * @param {string} str
+ * @returns {string}
+ */
+function hashText(str) {
+  let h1 = 0xdeadbeef ^ str.length;
+  let h2 = 0x41c6ce57 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+exports.BOM = BOM; exports.detectEol = detectEol; exports.splitText = splitText; exports.joinText = joinText; exports.leadingWhitespace = leadingWhitespace; exports.isBlank = isBlank; exports.measureIndent = measureIndent; exports.indentDepth = indentDepth; exports.truncate = truncate; exports.hashText = hashText;
+});
+
+__def("core/names.js", function (exports) {
+// TMDL object names: quoted ('Total Sales', 'Cust''s Name') or bare (VL06F+MB51, Staging\VL06F).
+
+/** Regex source for one name token (quoted or bare). */
+const NAME_SRC = "'(?:[^']|'')+'|[^\\s=:'.]+";
+
+/**
+ * Remove the surrounding quotes and unescape '' → '.
+ * Bare names are returned unchanged.
+ * @param {string} token
+ */
+function parseObjectName(token) {
+  if (token.length >= 2 && token.startsWith("'") && token.endsWith("'")) {
+    return token.slice(1, -1).replace(/''/g, "'");
+  }
+  return token;
+}
+
+/**
+ * Quote a name when TMDL requires it (contains . = : ' or whitespace,
+ * or starts/ends oddly). Single quotes inside are doubled.
+ * @param {string} name
+ */
+function quoteName(name) {
+  if (name === '' || /[.=:'\s]/.test(name)) {
+    return "'" + name.replace(/'/g, "''") + "'";
+  }
+  return name;
+}
+
+exports.NAME_SRC = NAME_SRC; exports.parseObjectName = parseObjectName; exports.quoteName = quoteName;
+});
+
+__def("core/parser.js", function (exports) {
+// TMDL parser (plan §7.1): single pass, indentation-based container stack,
+// backtick fence tracking. It only *locates* table/column/measure declarations
+// and their `///` description lines; it never rebuilds TMDL.
+
+const { splitText, leadingWhitespace, isBlank, measureIndent, indentDepth } = __req("core/text.js");
+const { NAME_SRC, parseObjectName } = __req("core/names.js");
+
+/** @typedef {'table'|'column'|'measure'} ObjType */
+
+/**
+ * @typedef {Object} TmdlObject
+ * @property {string}  key          `${type}|${table}|${name}` lowercased
+ * @property {ObjType} type
+ * @property {string}  table        parent table name (own name for tables)
+ * @property {string}  name         unquoted name
+ * @property {number}  declLine     0-based line index of the declaration
+ * @property {number}  descStart    first `///` line; === declLine when no description
+ * @property {string}  indent       exact whitespace prefix of the declaration line
+ * @property {string}  originalDesc description text joined with '\n'
+ * @property {string=} expression   expression text (measure / calculated column), capped
+ * @property {string=} dataType
+ * @property {boolean} isHidden
+ * @property {boolean} editable     false for `ref table`
+ */
+
+/**
+ * @typedef {Object} ParseResult
+ * @property {string[]} lines
+ * @property {'\n'|'\r\n'} eol
+ * @property {boolean} hasBom
+ * @property {boolean} trailingNewline
+ * @property {TmdlObject[]} objects
+ * @property {{line:number, message:string}[]} warnings
+ * @property {boolean} hasCreateOrReplace
+ * @property {boolean} hasModel
+ */
+
+const CONTAINERS = new Set(['createorreplace', 'database', 'model']);
+const TABLE_RE = new RegExp('^(ref\\s+)?table\\s+(' + NAME_SRC + ')(\\s*=.*)?$', 'i');
+const CHILD_RE = new RegExp('^(column|measure)\\s+(' + NAME_SRC + ')(\\s*=(.*))?$', 'i');
+const FENCE_OPEN_RE = /=\s*(`{3,})$/;
+const EXPR_MAX_CHARS = 4000;
+const EXPR_MAX_LINES = 40;
+
+/** Build the lookup key for an object. */
+function makeKey(type, table, name) {
+  return (type + '|' + table + '|' + name).toLowerCase();
+}
+
+/**
+ * Read the description block directly above `declLine`.
+ * @param {string[]} lines
+ * @param {number} declLine
+ * @param {string} indent
+ */
+function readDescription(lines, declLine, indent) {
+  const prefix = indent + '///';
+  let start = declLine;
+  while (start > 0 && lines[start - 1].startsWith(prefix)) start--;
+  const parts = [];
+  for (let j = start; j < declLine; j++) {
+    let rest = lines[j].slice(prefix.length);
+    if (rest.startsWith(' ')) rest = rest.slice(1);
+    parts.push(rest);
+  }
+  return { descStart: start, text: parts.join('\n') };
+}
+
+function dedent(lines) {
+  let min = Infinity;
+  for (const l of lines) {
+    if (isBlank(l)) continue;
+    min = Math.min(min, leadingWhitespace(l).length);
+  }
+  if (!isFinite(min)) min = 0;
+  return lines.map((l) => (isBlank(l) ? '' : l.slice(min)));
+}
+
+/**
+ * @param {string} raw full text (BOM / CRLF allowed)
+ * @returns {ParseResult}
+ */
+function parseTmdl(raw) {
+  const { lines, eol, hasBom, trailingNewline, mixedEol } = splitText(raw);
+  const unit = measureIndent(lines);
+  /** @type {TmdlObject[]} */
+  const objects = [];
+  /** @type {{line:number, message:string}[]} */
+  const warnings = [];
+  /** @type {{kind:string, depth:number, obj?:TmdlObject, name?:string}[]} */
+  const stack = [];
+  /** @type {{close:string, line:number}|null} */
+  let fence = null;
+  /** expression collector for the latest column/measure */
+  let collector = null;
+  let hasCreateOrReplace = false;
+  let hasModel = false;
+
+  const finishCollector = () => {
+    if (!collector) return;
+    const body = dedent(collector.lines);
+    while (body.length && body[0] === '') body.shift();
+    while (body.length && body[body.length - 1] === '') body.pop();
+    let text = body.join('\n');
+    if (collector.truncated) text += '\n…';
+    if (text.length > EXPR_MAX_CHARS) text = text.slice(0, EXPR_MAX_CHARS) + '…';
+    if (text) collector.obj.expression = text;
+    collector = null;
+  };
+  const collect = (line) => {
+    if (collector.lines.length >= EXPR_MAX_LINES) {
+      collector.truncated = true;
+      return;
+    }
+    collector.lines.push(line.length > EXPR_MAX_CHARS ? line.slice(0, EXPR_MAX_CHARS) : line);
+  };
+
+  if (mixedEol) {
+    warnings.push({ line: 0, message: 'Line ending campuran terdeteksi (CRLF dan LF). Output tetap memakai byte asli, tetapi hasil parse mungkin tidak akurat.' });
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (fence) {
+      if (line.trim() === fence.close) {
+        fence = null;
+        if (collector && collector.inFence) finishCollector();
+      } else if (collector && collector.inFence) {
+        collect(line);
+      }
+      continue;
+    }
+
+    if (isBlank(line)) {
+      if (collector) collect('');
+      continue;
+    }
+
+    const ws = leadingWhitespace(line);
+    const body = line.slice(ws.length).trimEnd();
+    const d = indentDepth(ws, unit);
+
+    if (body.startsWith('///')) {
+      // `///` never opens a fence or changes context. Deep ones are DAX/M comments
+      // inside an unfenced expression: keep them in the expression summary.
+      if (collector && !collector.inFence && d >= collector.depth + 2) collect(line);
+      continue;
+    }
+
+    // Unfenced multi-line expression of the latest column/measure (objDepth + 2 or deeper).
+    if (collector && !collector.inFence) {
+      if (d >= collector.depth + 2) {
+        collect(line);
+      } else {
+        finishCollector();
+      }
+    }
+
+    while (stack.length && stack[stack.length - 1].depth >= d) stack.pop();
+    const top = stack.length ? stack[stack.length - 1] : null;
+    const allContainers = stack.every((e) => e.kind === 'container');
+    const kw = body.split(/\s+/)[0].toLowerCase();
+    const fenceMatch = FENCE_OPEN_RE.exec(body);
+    let m;
+
+    if (CONTAINERS.has(kw) && allContainers) {
+      if (kw === 'createorreplace') hasCreateOrReplace = true;
+      if (kw === 'model') hasModel = true;
+      stack.push({ kind: 'container', depth: d });
+    } else if (allContainers && (m = TABLE_RE.exec(body))) {
+      const name = parseObjectName(m[2]);
+      const isRef = !!m[1];
+      const desc = readDescription(lines, i, ws);
+      /** @type {TmdlObject} */
+      const obj = {
+        key: makeKey('table', name, name),
+        type: 'table',
+        table: name,
+        name,
+        declLine: i,
+        descStart: desc.descStart,
+        indent: ws,
+        originalDesc: desc.text,
+        isHidden: false,
+        editable: !isRef,
+      };
+      objects.push(obj);
+      stack.push({ kind: 'table', depth: d, obj, name });
+    } else if (top && top.kind === 'table' && d === top.depth + 1 && (m = CHILD_RE.exec(body))) {
+      const type = /** @type {ObjType} */ (m[1].toLowerCase());
+      const name = parseObjectName(m[2]);
+      const desc = readDescription(lines, i, ws);
+      /** @type {TmdlObject} */
+      const obj = {
+        key: makeKey(type, top.name, name),
+        type,
+        table: /** @type {string} */ (top.name),
+        name,
+        declLine: i,
+        descStart: desc.descStart,
+        indent: ws,
+        originalDesc: desc.text,
+        isHidden: false,
+        editable: true,
+      };
+      objects.push(obj);
+      stack.push({ kind: type, depth: d, obj });
+      if (m[3] !== undefined) {
+        const rhs = (m[4] || '').trim();
+        if (fenceMatch) {
+          collector = { obj, depth: d, lines: [], inFence: true, truncated: false };
+        } else if (rhs === '') {
+          collector = { obj, depth: d, lines: [], inFence: false, truncated: false };
+        } else {
+          obj.expression = rhs.length > EXPR_MAX_CHARS ? rhs.slice(0, EXPR_MAX_CHARS) + '…' : rhs;
+        }
+      }
+    } else {
+      // Direct property of a recognised object → lightweight metadata for the UI.
+      if (top && top.obj && d === top.depth + 1) {
+        const pm = /^([A-Za-z]+)\s*(?::\s*(.*))?$/.exec(body);
+        if (pm) {
+          const prop = pm[1].toLowerCase();
+          if (prop === 'datatype' && pm[2] !== undefined) top.obj.dataType = pm[2].trim();
+          if (prop === 'ishidden') top.obj.isHidden = pm[2] === undefined || pm[2].trim().toLowerCase() !== 'false';
+        }
+      }
+      stack.push({ kind: 'other', depth: d });
+    }
+
+    if (fenceMatch) fence = { close: fenceMatch[1], line: i };
+  }
+
+  finishCollector();
+  if (fence) {
+    warnings.push({ line: fence.line, message: 'Blok ``` dibuka di baris ' + (fence.line + 1) + ' tetapi tidak pernah ditutup.' });
+  }
+
+  const seen = new Map();
+  for (const o of objects) {
+    const prev = seen.get(o.key);
+    if (prev) {
+      if (!prev.warned) {
+        warnings.push({
+          line: o.declLine,
+          message: 'Objek ' + o.type + ' "' + (o.type === 'table' ? o.name : o.table + '[' + o.name + ']') +
+            '" dideklarasikan lebih dari sekali (baris ' + (prev.line + 1) + ' dan ' + (o.declLine + 1) + '). Semua kemunculan akan ikut diperbarui.',
+        });
+        prev.warned = true;
+      }
+    } else {
+      seen.set(o.key, { line: o.declLine, warned: false });
+    }
+  }
+  if (objects.length === 0) {
+    warnings.push({ line: 0, message: 'Tidak ada table, column, atau measure yang dikenali.' });
+  }
+
+  return { lines, eol, hasBom, trailingNewline, objects, warnings, hasCreateOrReplace, hasModel };
+}
+
+exports.makeKey = makeKey; exports.readDescription = readDescription; exports.parseTmdl = parseTmdl;
+});
+
+__def("core/writer.js", function (exports) {
+// Writer (plan §7.2): only inserts / replaces / removes `///` description lines
+// of recognised objects. Every other byte is copied from the original lines.
+
+const { joinText } = __req("core/text.js");
+
+/**
+ * Normalise description text the way it will be written.
+ * CRLF → LF, trailing spaces trimmed per line, leading/trailing blank lines removed.
+ * @param {string} text
+ */
+function normalizeDescription(text) {
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/\s+$/, ''));
+  while (lines.length && lines[0] === '') lines.shift();
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+/**
+ * Build the description lines for an object.
+ * @param {string} indent
+ * @param {string} desc normalised description
+ */
+function descriptionLines(indent, desc) {
+  if (desc === '') return [];
+  return desc.split('\n').map((l) => (l === '' ? indent + '///' : indent + '/// ' + l));
+}
+
+/**
+ * True when an edit would change the bytes for this object.
+ * @param {{originalDesc:string}} obj
+ * @param {string} edit
+ */
+function isChanged(obj, edit) {
+  return normalizeDescription(edit) !== normalizeDescription(obj.originalDesc);
+}
+
+/**
+ * @param {import('./parser.js').ParseResult} parsed
+ * @param {Map<string,string>} edits key → new description ('' removes)
+ * @returns {string}
+ */
+function applyDescriptions(parsed, edits) {
+  // Replacement per object, keyed by its declaration line. Description ranges
+  // of different objects never overlap, so a single forward pass is enough
+  // (equivalent to splicing bottom-up by declLine, plan §7.2, but O(n)).
+  /** @type {Map<number, {descStart:number, lines:string[]}>} */
+  const replacements = new Map();
+  for (const obj of parsed.objects) {
+    if (!obj.editable || !edits.has(obj.key)) continue;
+    const edit = /** @type {string} */ (edits.get(obj.key));
+    if (!isChanged(obj, edit)) continue;
+    replacements.set(obj.declLine, { descStart: obj.descStart, lines: descriptionLines(obj.indent, normalizeDescription(edit)) });
+  }
+  if (replacements.size === 0) return joinText(parsed.lines, parsed);
+
+  const src = parsed.lines;
+  const skip = new Uint8Array(src.length);
+  const out = [];
+  for (const [declLine, r] of replacements) skip.fill(1, r.descStart, declLine);
+  for (let i = 0; i < src.length; i++) {
+    const r = replacements.get(i);
+    if (r) for (const l of r.lines) out.push(l);
+    if (!skip[i]) out.push(src[i]);
+  }
+  return joinText(out, parsed);
+}
+
+exports.normalizeDescription = normalizeDescription; exports.descriptionLines = descriptionLines; exports.isChanged = isChanged; exports.applyDescriptions = applyDescriptions;
+});
+
+__def("core/items.js", function (exports) {
+// Editor view model derived from a ParseResult: one item per key (partial
+// declarations merged), grouped per table in order of appearance.
+
+const { normalizeDescription } = __req("core/writer.js");
+
+/**
+ * @typedef {Object} EditorItem
+ * @property {string} key
+ * @property {'table'|'column'|'measure'} type
+ * @property {string} table
+ * @property {string} name
+ * @property {string=} dataType
+ * @property {boolean} isHidden
+ * @property {string=} expression
+ * @property {boolean} editable
+ * @property {string} originalDesc
+ * @property {number} occurrences
+ * @property {number} line  1-based line of the first declaration
+ */
+
+/**
+ * @typedef {Object} TableGroup
+ * @property {string} key    lowercased table name
+ * @property {string} name
+ * @property {boolean} editable  false when the table itself is only a `ref`
+ * @property {EditorItem[]} items  table item first, then columns/measures
+ */
+
+/**
+ * @param {import('./parser.js').ParseResult} parsed
+ * @returns {{items:EditorItem[], byKey:Map<string,EditorItem>, tables:TableGroup[]}}
+ */
+function buildItems(parsed) {
+  /** @type {Map<string, EditorItem>} */
+  const byKey = new Map();
+  /** @type {EditorItem[]} */
+  const items = [];
+  /** @type {Map<string, TableGroup>} */
+  const groups = new Map();
+  for (const o of parsed.objects) {
+    let it = byKey.get(o.key);
+    if (!it) {
+      it = {
+        key: o.key,
+        type: o.type,
+        table: o.table,
+        name: o.name,
+        dataType: o.dataType,
+        isHidden: o.isHidden,
+        expression: o.expression,
+        editable: o.editable,
+        originalDesc: o.originalDesc,
+        occurrences: 1,
+        line: o.declLine + 1,
+      };
+      byKey.set(o.key, it);
+      items.push(it);
+      const gk = o.table.toLowerCase();
+      let g = groups.get(gk);
+      if (!g) {
+        g = { key: gk, name: o.table, editable: false, items: [] };
+        groups.set(gk, g);
+      }
+      if (o.type === 'table') g.items.unshift(it);
+      else g.items.push(it);
+    } else {
+      it.occurrences++;
+      if (o.editable && !it.editable) {
+        it.editable = true;
+        it.originalDesc = o.originalDesc;
+      }
+      if (!it.dataType && o.dataType) it.dataType = o.dataType;
+      if (!it.expression && o.expression) it.expression = o.expression;
+      it.isHidden = it.isHidden || o.isHidden;
+    }
+  }
+  for (const g of groups.values()) {
+    const t = g.items.find((i) => i.type === 'table');
+    g.editable = !!t && t.editable;
+  }
+  return { items, byKey, tables: [...groups.values()] };
+}
+
+/**
+ * @param {EditorItem} item
+ * @param {Map<string,string>} edits
+ */
+function currentDescription(item, edits) {
+  return edits.has(item.key) ? /** @type {string} */ (edits.get(item.key)) : item.originalDesc;
+}
+
+/**
+ * @param {EditorItem} item
+ * @param {Map<string,string>} edits
+ */
+function itemStatus(item, edits) {
+  const cur = normalizeDescription(currentDescription(item, edits));
+  return {
+    filled: cur !== '',
+    changed: item.editable && cur !== normalizeDescription(item.originalDesc),
+  };
+}
+
+/**
+ * Progress over editable items.
+ * @param {EditorItem[]} items
+ * @param {Map<string,string>} edits
+ */
+function progress(items, edits) {
+  let total = 0;
+  let filled = 0;
+  let changed = 0;
+  for (const it of items) {
+    if (!it.editable) continue;
+    total++;
+    const s = itemStatus(it, edits);
+    if (s.filled) filled++;
+    if (s.changed) changed++;
+  }
+  return { total, filled, changed };
+}
+
+/** Summary counts for the input step. */
+function summarize(parsed) {
+  const c = { table: 0, column: 0, measure: 0, withDesc: 0 };
+  for (const o of parsed.objects) {
+    c[o.type]++;
+    if (o.originalDesc !== '') c.withDesc++;
+  }
+  return c;
+}
+
+exports.buildItems = buildItems; exports.currentDescription = currentDescription; exports.itemStatus = itemStatus; exports.progress = progress; exports.summarize = summarize;
+});
+
+__def("ui/dom.js", function (exports) {
+// Tiny DOM helpers. No framework.
+
+/**
+ * Create an element. attrs: class, text, html is NOT supported (no innerHTML from data).
+ * Keys starting with "on" attach listeners; `dataset` sets data-*; boolean false skips.
+ * @param {string} tag
+ * @param {Record<string, any>=} attrs
+ * @param {...(Node|string|null|undefined|false|(Node|string)[])} children
+ * @returns {HTMLElement}
+ */
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === false || v == null) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k === 'dataset') Object.assign(el.dataset, v);
+      else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+      else if (k in el && typeof v !== 'string') el[k] = v;
+      else el.setAttribute(k, v === true ? '' : String(v));
+    }
+  }
+  appendAll(el, children);
+  return el;
+}
+
+function appendAll(el, children) {
+  for (const c of children) {
+    if (c == null || c === false) continue;
+    if (Array.isArray(c)) appendAll(el, c);
+    else el.append(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+}
+
+/** @param {string} sel */
+function $(sel, root = document) {
+  return /** @type {HTMLElement} */ (root.querySelector(sel));
+}
+
+/** Remove all children. */
+function clear(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  return el;
+}
+
+let toastTimer = 0;
+/** @param {string} msg @param {'ok'|'error'|'info'} [kind] */
+function toast(msg, kind = 'info') {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.dataset.kind = kind;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.hidden = true;
+  }, 3200);
+}
+
+/**
+ * Trigger a file download from a string (UTF-8). A leading U+FEFF becomes EF BB BF.
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mime]
+ */
+function downloadText(filename, content, mime = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: filename, style: { display: 'none' } });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Copy text to the clipboard; falls back to execCommand for older browsers / file://.
+ * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  const ta = h('textarea', { style: { position: 'fixed', top: '-1000px', opacity: '0' } });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
+}
+
+/** Debounce. */
+function debounce(fn, ms) {
+  let t = 0;
+  const wrapped = (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+  wrapped.flush = () => {
+    clearTimeout(t);
+    fn();
+  };
+  return wrapped;
+}
+
+/** Auto-grow a textarea to its content. */
+function autoGrow(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 2 + 'px';
+}
+
+/**
+ * Open the shared <dialog> with content. Returns a close function.
+ * @param {string} title
+ * @param {(close:()=>void)=>(Node|Node[])} build
+ */
+function openModal(title, build) {
+  const dlg = /** @type {HTMLDialogElement} */ ($('#modal'));
+  clear(dlg);
+  const close = () => {
+    if (dlg.open) dlg.close();
+  };
+  const body = build(close);
+  dlg.append(
+    h('div', { class: 'modal-head' },
+      h('h2', { text: title }),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tutup', onclick: close, text: '×' })),
+    h('div', { class: 'modal-body' }, body),
+  );
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+  return close;
+}
+
+/** Format a number with Indonesian grouping. */
+function fmt(n) {
+  return n.toLocaleString('id-ID');
+}
+
+exports.h = h; exports.$ = $; exports.clear = clear; exports.toast = toast; exports.downloadText = downloadText; exports.copyText = copyText; exports.debounce = debounce; exports.autoGrow = autoGrow; exports.openModal = openModal; exports.fmt = fmt;
+});
+
+__def("ui/storage.js", function (exports) {
+// localStorage drafts. Every access is wrapped in try/catch: storage may be
+// disabled, full, or unavailable on file:// in some browsers.
+
+const PREFIX = 'tmdl-desc-editor:v1:';
+const INDEX_KEY = PREFIX + 'drafts';
+const PREFS_KEY = PREFIX + 'prefs';
+const MAX_DRAFTS = 12;
+
+function read(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function write(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function remove(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * @typedef {{hash:string, name:string, savedAt:number, edits:[string,string][]}} Draft
+ */
+
+/** @param {string} hash @returns {Draft|null} */
+function loadDraft(hash) {
+  const d = read(PREFIX + 'draft:' + hash);
+  if (!d || !Array.isArray(d.edits)) return null;
+  return d;
+}
+
+/**
+ * Save (or delete when there are no edits) the draft for one input text.
+ * @param {string} hash
+ * @param {string} name
+ * @param {Map<string,string>} edits
+ */
+function saveDraft(hash, name, edits) {
+  if (edits.size === 0) {
+    deleteDraft(hash);
+    return true;
+  }
+  const ok = write(PREFIX + 'draft:' + hash, { hash, name, savedAt: Date.now(), edits: [...edits] });
+  if (!ok) return false;
+  let index = read(INDEX_KEY);
+  if (!Array.isArray(index)) index = [];
+  index = [hash, ...index.filter((x) => x !== hash)];
+  for (const old of index.slice(MAX_DRAFTS)) remove(PREFIX + 'draft:' + old);
+  write(INDEX_KEY, index.slice(0, MAX_DRAFTS));
+  return true;
+}
+
+/** @param {string} hash */
+function deleteDraft(hash) {
+  remove(PREFIX + 'draft:' + hash);
+  const index = read(INDEX_KEY);
+  if (Array.isArray(index)) write(INDEX_KEY, index.filter((x) => x !== hash));
+}
+
+/** @returns {Record<string, any>} */
+function loadPrefs() {
+  const p = read(PREFS_KEY);
+  return p && typeof p === 'object' ? p : {};
+}
+
+/** @param {Record<string, any>} patch */
+function savePrefs(patch) {
+  write(PREFS_KEY, { ...loadPrefs(), ...patch });
+}
+
+exports.loadDraft = loadDraft; exports.saveDraft = saveDraft; exports.deleteDraft = deleteDraft; exports.loadPrefs = loadPrefs; exports.savePrefs = savePrefs;
+});
+
+__def("ui/input-panel.js", function (exports) {
+// Step 1: paste or drop .tmdl files, parse, show summary / warnings / draft offer.
+
+const { summarize } = __req("core/items.js");
+const { h, clear, toast, fmt } = __req("ui/dom.js");
+
+const PLACEHOLDER = [
+  'Tempel script TMDL di sini.',
+  '',
+  'Dari Power BI Desktop:',
+  '  1. Buka TMDL view (ikon di sisi kiri).',
+  '  2. Seret node "Semantic model" (atau tabel tertentu) dari Data pane ke editor,',
+  '     atau klik kanan objek → Script TMDL → Clipboard.',
+  '  3. Ctrl+A lalu Ctrl+C di editor TMDL, lalu tempel (Ctrl+V) di sini.',
+  '',
+  'Bisa juga menyeret file .tmdl dari folder PBIP ke kotak di bawah.',
+].join('\n');
+
+/**
+ * Decode a file keeping a UTF-8 BOM (FileReader.readAsText would strip it).
+ * @param {File} file
+ */
+async function readFileKeepBom(file) {
+  const buf = await file.arrayBuffer();
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(buf);
+}
+
+/**
+ * @param {any} app
+ * @param {HTMLElement} root
+ */
+function initInput(app, root) {
+  /** @type {{name:string, text:string}[]} */
+  let files = [];
+
+  const textarea = /** @type {HTMLTextAreaElement} */ (h('textarea', {
+    class: 'input-text',
+    id: 'input-text',
+    spellcheck: false,
+    autocomplete: 'off',
+    wrap: 'off',
+    placeholder: PLACEHOLDER,
+    'aria-label': 'Script TMDL',
+  }));
+  const fileInput = /** @type {HTMLInputElement} */ (h('input', { type: 'file', accept: '.tmdl,text/plain', multiple: true, hidden: true }));
+  const chips = h('div', { class: 'chips' });
+  const summary = h('div', { class: 'summary', id: 'input-summary' });
+  const parseBtn = h('button', { class: 'btn primary', type: 'button', id: 'parse-btn', text: 'Parse' });
+  const clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Kosongkan' });
+
+  const drop = h('div', { class: 'dropzone', tabindex: '0', role: 'button', 'aria-label': 'Pilih atau seret file .tmdl' },
+    h('strong', { text: 'Seret file .tmdl ke sini' }),
+    h('span', { text: ' atau klik untuk memilih. Beberapa file sekaligus boleh; tiap file diproses dan di-output terpisah.' }),
+  );
+
+  root.append(
+    h('div', { class: 'input-layout' },
+      h('div', { class: 'card' },
+        h('div', { class: 'card-head' },
+          h('h1', { text: 'Tempel script TMDL' }),
+          h('p', { class: 'muted', text: 'Semua proses terjadi di browser ini. Tidak ada data yang dikirim ke mana pun.' })),
+        textarea,
+        drop,
+        fileInput,
+        chips,
+        h('div', { class: 'actions' }, parseBtn, clearBtn)),
+      summary,
+    ),
+  );
+
+  function renderChips() {
+    clear(chips);
+    for (const f of files) {
+      chips.append(h('span', { class: 'chip' },
+        f.name,
+        h('button', {
+          type: 'button', class: 'chip-x', 'aria-label': 'Hapus ' + f.name, text: '×',
+          onclick: () => {
+            files = files.filter((x) => x !== f);
+            renderChips();
+          },
+        })));
+    }
+  }
+
+  async function addFiles(list) {
+    for (const file of list) {
+      if (!/\.tmdl$/i.test(file.name) && file.type && !file.type.startsWith('text/')) {
+        toast(`${file.name} dilewati (bukan file teks/.tmdl)`, 'error');
+        continue;
+      }
+      try {
+        const text = await readFileKeepBom(file);
+        files = files.filter((f) => f.name !== file.name);
+        files.push({ name: file.name, text });
+      } catch {
+        toast(`Gagal membaca ${file.name}`, 'error');
+      }
+    }
+    renderChips();
+  }
+
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener('change', () => {
+    addFiles([...(fileInput.files || [])]);
+    fileInput.value = '';
+  });
+  for (const el of [drop, textarea]) {
+    el.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+        e.preventDefault();
+        drop.classList.add('over');
+      }
+    });
+    el.addEventListener('dragleave', () => drop.classList.remove('over'));
+    el.addEventListener('drop', (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+      e.preventDefault();
+      drop.classList.remove('over');
+      addFiles([...e.dataTransfer.files]);
+    });
+  }
+  // Prevent the browser from navigating to a file dropped outside the zone.
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+
+  clearBtn.addEventListener('click', () => {
+    textarea.value = '';
+    files = [];
+    renderChips();
+    textarea.focus();
+  });
+
+  parseBtn.addEventListener('click', () => {
+    const sources = [];
+    if (textarea.value.trim() !== '') sources.push({ name: 'Script (tempel)', text: textarea.value, fromFile: false });
+    for (const f of files) sources.push({ name: f.name, text: f.text, fromFile: true });
+    if (sources.length === 0) {
+      toast('Tempel script atau pilih file .tmdl dulu.', 'error');
+      textarea.focus();
+      return;
+    }
+    app.loadDocs(sources);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      parseBtn.click();
+    }
+  });
+
+  function renderSummary() {
+    clear(summary);
+    if (!app.docs.length) return;
+    let anyObjects = false;
+    for (const doc of app.docs) {
+      const c = summarize(doc.parsed);
+      if (doc.parsed.objects.length) anyObjects = true;
+      const card = h('div', { class: 'card summary-card' },
+        h('div', { class: 'summary-title' },
+          h('strong', { text: doc.name }),
+          doc.parsed.hasModel && doc.parsed.hasCreateOrReplace ? h('span', { class: 'tag warn', text: 'script seluruh model' }) : null,
+          doc.parsed.hasBom ? h('span', { class: 'tag', text: 'BOM' }) : null,
+          h('span', { class: 'tag', text: doc.parsed.eol === '\r\n' ? 'CRLF' : 'LF' }),
+          h('span', { class: 'tag', text: fmt(doc.parsed.lines.length) + ' baris' })),
+        h('p', { class: 'summary-counts' },
+          `${fmt(c.table)} tabel, ${fmt(c.column)} kolom, ${fmt(c.measure)} measure, ${fmt(c.withDesc)} deskripsi sudah ada`),
+      );
+      if (doc.parsed.warnings.length) {
+        card.append(h('ul', { class: 'warnings' },
+          doc.parsed.warnings.map((w) => h('li', null, w.line ? `Baris ${w.line + 1}: ` : '', w.message))));
+      }
+      if (doc.draft) card.append(draftBanner(doc));
+      summary.append(card);
+    }
+    if (anyObjects) {
+      summary.append(h('div', { class: 'actions' },
+        h('button', { class: 'btn primary', type: 'button', id: 'goto-edit', text: 'Lanjut ke Edit →', onclick: () => app.goto('edit') })));
+    }
+  }
+
+  function draftBanner(doc) {
+    const d = doc.draft;
+    const when = new Date(d.savedAt).toLocaleString('id-ID');
+    return h('div', { class: 'banner info draft-banner' },
+      h('span', null, `Ada draft tersimpan untuk input ini (${fmt(d.edits.length)} perubahan, ${when}). Kalau Anda langsung mengedit tanpa memulihkan, draft lama akan ditimpa.`),
+      h('span', { class: 'banner-actions' },
+        h('button', {
+          class: 'btn small primary', type: 'button', text: 'Pulihkan',
+          onclick: () => {
+            const n = app.restoreDraft(doc);
+            toast(`${n} deskripsi dipulihkan dari draft`, 'ok');
+          },
+        }),
+        h('button', { class: 'btn small ghost', type: 'button', text: 'Abaikan', onclick: () => app.discardDraft(doc) })));
+  }
+
+  app.on('docs', () => {
+    renderSummary();
+    const total = app.docs.reduce((n, d) => n + d.parsed.objects.length, 0);
+    if (total === 0) toast('Tidak ada table/column/measure yang dikenali.', 'error');
+  });
+  app.on('draft', renderSummary);
+}
+
+exports.initInput = initInput;
+});
+
+__def("core/csv.js", function (exports) {
+// CSV export / import for SME round trips (plan §7.4). RFC 4180 quoting,
+// UTF-8 BOM for Excel, `;` (default, Indonesian Excel locale) or `,`.
+
+const { normalizeDescription } = __req("core/writer.js");
+
+const CSV_COLUMNS = ['Table', 'Type', 'Name', 'DataType', 'IsHidden', 'Expression', 'Description'];
+
+/**
+ * @param {string} value
+ * @param {string} delimiter
+ */
+function quoteField(value, delimiter) {
+  const s = value == null ? '' : String(value);
+  if (s.includes(delimiter) || s.includes('"') || s.includes('\n') || s.includes('\r') || /^\s|\s$/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/**
+ * @param {{table:string, type:string, name:string, dataType?:string, isHidden?:boolean, expression?:string, description:string}[]} rows
+ * @param {{delimiter?:string, bom?:boolean}} [opt]
+ * @returns {string}
+ */
+function toCsv(rows, opt = {}) {
+  const delimiter = opt.delimiter ?? ';';
+  const lines = [CSV_COLUMNS.map((c) => quoteField(c, delimiter)).join(delimiter)];
+  for (const r of rows) {
+    lines.push([
+      r.table,
+      r.type,
+      r.name,
+      r.dataType ?? '',
+      r.isHidden ? 'TRUE' : 'FALSE',
+      r.expression ?? '',
+      r.description ?? '',
+    ].map((v) => quoteField(v, delimiter)).join(delimiter));
+  }
+  return (opt.bom === false ? '' : '﻿') + lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * Detect the delimiter from the header line (outside quotes).
+ * @param {string} text
+ */
+function detectDelimiter(text) {
+  const counts = { ';': 0, ',': 0, '\t': 0 };
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && (ch === '\n' || ch === '\r')) break;
+    else if (!inQuotes && ch in counts) counts[ch]++;
+  }
+  let best = ';';
+  for (const d of [';', ',', '\t']) if (counts[d] > counts[best]) best = d;
+  return best;
+}
+
+/**
+ * Parse CSV text (RFC 4180, multi-line cells, BOM tolerated).
+ * @param {string} raw
+ * @param {string=} delimiter auto-detected when omitted
+ * @returns {{delimiter:string, rows:string[][]}}
+ */
+function parseCsv(raw, delimiter) {
+  const text = raw.startsWith('﻿') ? raw.slice(1) : raw;
+  const d = delimiter ?? detectDelimiter(text);
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+    if (ch === '"' && field === '') {
+      inQuotes = true;
+      i++;
+    } else if (ch === d) {
+      row.push(field);
+      field = '';
+      i++;
+    } else if (ch === '\r' || ch === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      i += ch === '\r' && text[i + 1] === '\n' ? 2 : 1;
+    } else {
+      field += ch;
+      i++;
+    }
+  }
+  if (field !== '' || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  // Drop fully empty lines.
+  return { delimiter: d, rows: rows.filter((r) => !(r.length === 1 && r[0] === '')) };
+}
+
+/**
+ * Match imported CSV rows to parsed objects by Type|Table|Name (case-insensitive).
+ * @param {string} raw CSV text
+ * @param {{key:string, type:string, table:string, name:string, editable:boolean}[]} items
+ * @param {(key:string)=>string} currentDesc current description for a key
+ * @returns {{delimiter:string, matched:number, changed:{key:string, item:any, from:string, to:string}[],
+ *   notFound:{line:number, type:string, table:string, name:string}[], readOnly:number, errors:string[]}}
+ */
+function matchCsv(raw, items, currentDesc) {
+  const { delimiter, rows } = parseCsv(raw);
+  const result = { delimiter, matched: 0, changed: [], notFound: [], readOnly: 0, errors: [] };
+  if (rows.length === 0) {
+    result.errors.push('File CSV kosong.');
+    return result;
+  }
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const col = (n) => header.indexOf(n);
+  const iTable = col('table');
+  const iType = col('type');
+  const iName = col('name');
+  const iDesc = col('description');
+  const missing = [['Table', iTable], ['Type', iType], ['Name', iName], ['Description', iDesc]].filter(([, i]) => i < 0).map(([n]) => n);
+  if (missing.length) {
+    result.errors.push('Kolom wajib tidak ditemukan di header: ' + missing.join(', ') + '.');
+    return result;
+  }
+  const byKey = new Map(items.map((it) => [it.key, it]));
+  const seen = new Set();
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const type = (row[iType] ?? '').trim().toLowerCase();
+    const table = (row[iTable] ?? '').trim();
+    const name = (row[iName] ?? '').trim();
+    if (!type && !table && !name) continue;
+    const key = (type + '|' + table + '|' + name).toLowerCase();
+    const item = byKey.get(key);
+    if (!item) {
+      result.notFound.push({ line: r + 1, type, table, name });
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!item.editable) {
+      result.readOnly++;
+      continue;
+    }
+    result.matched++;
+    const to = normalizeDescription(row[iDesc] ?? '');
+    const from = normalizeDescription(currentDesc(key));
+    if (to !== from) result.changed.push({ key, item, from, to });
+  }
+  return result;
+}
+
+exports.CSV_COLUMNS = CSV_COLUMNS; exports.toCsv = toCsv; exports.detectDelimiter = detectDelimiter; exports.parseCsv = parseCsv; exports.matchCsv = matchCsv;
+});
+
+__def("core/bulk.js", function (exports) {
+// Pure helpers for bulk fill, templates and find/replace on description text.
+
+const TYPE_LABEL = { table: 'tabel', column: 'kolom', measure: 'measure' };
+
+/**
+ * Expand {name}, {table} and {type} placeholders. Unknown placeholders stay as-is.
+ * @param {string} template
+ * @param {{name:string, table:string, type:string}} item
+ */
+function applyTemplate(template, item) {
+  return template.replace(/\{(name|table|type)\}/gi, (_, k) => {
+    const key = k.toLowerCase();
+    if (key === 'name') return item.name;
+    if (key === 'table') return item.table;
+    return TYPE_LABEL[item.type] || item.type;
+  });
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Replace every occurrence of `find` (literal) in `text`.
+ * @param {string} text
+ * @param {string} find
+ * @param {string} replacement
+ * @param {boolean} caseSensitive
+ * @returns {{text:string, count:number}}
+ */
+function replaceAllLiteral(text, find, replacement, caseSensitive) {
+  if (!find) return { text, count: 0 };
+  const re = new RegExp(escapeRegExp(find), caseSensitive ? 'g' : 'gi');
+  let count = 0;
+  const out = text.replace(re, () => {
+    count++;
+    return replacement;
+  });
+  return { text: out, count };
+}
+
+exports.applyTemplate = applyTemplate; exports.replaceAllLiteral = replaceAllLiteral;
+});
+
+__def("ui/tools.js", function (exports) {
+// v1.1 tools: CSV export/import, bulk fill with templates, find & replace.
+
+const { toCsv, matchCsv } = __req("core/csv.js");
+const { applyTemplate, replaceAllLiteral } = __req("core/bulk.js");
+const { normalizeDescription } = __req("core/writer.js");
+const { truncate } = __req("core/text.js");
+const { h, clear, toast, downloadText, openModal, fmt } = __req("ui/dom.js");
+
+/**
+ * @param {any} app
+ * @param {HTMLElement} bar
+ * @param {{viewItems:()=>any[], selectedItems:()=>any[]}} ctx
+ */
+function initTools(app, bar, ctx) {
+  const selInfo = h('span', { class: 'muted sel-info' });
+  const bulkBtn = h('button', { type: 'button', class: 'btn small', text: 'Isi massal…' });
+  const replaceBtn = h('button', { type: 'button', class: 'btn small', text: 'Cari & ganti…' });
+  const exportBtn = h('button', { type: 'button', class: 'btn small', text: 'Export CSV…' });
+  const importBtn = h('button', { type: 'button', class: 'btn small', text: 'Import CSV…' });
+  const clearSelBtn = h('button', { type: 'button', class: 'link-btn', text: 'batal pilih' });
+  const fileInput = /** @type {HTMLInputElement} */ (h('input', { type: 'file', accept: '.csv,text/csv,text/plain', hidden: true }));
+  bar.append(selInfo, clearSelBtn, h('span', { class: 'spacer' }), bulkBtn, replaceBtn, exportBtn, importBtn, fileInput);
+
+  function refresh() {
+    const n = ctx.selectedItems().length;
+    selInfo.textContent = n ? `${fmt(n)} objek dipilih` : 'Centang baris untuk isi massal';
+    clearSelBtn.hidden = n === 0;
+  }
+
+  clearSelBtn.addEventListener('click', () => {
+    app.doc().selected.clear();
+    app.emit('bulk');
+    refresh();
+  });
+
+  // ---------- CSV export ----------
+  exportBtn.addEventListener('click', () => {
+    const doc = app.doc();
+    openModal('Export CSV', (close) => {
+      const delim = /** @type {HTMLSelectElement} */ (h('select', { id: 'csv-delim' },
+        h('option', { value: ';', text: 'Titik koma ( ; ) — Excel locale Indonesia' }),
+        h('option', { value: ',', text: 'Koma ( , ) — Excel locale Inggris' })));
+      delim.value = app.prefs.csvDelimiter === ',' ? ',' : ';';
+      const scope = /** @type {HTMLSelectElement} */ (h('select', { id: 'csv-scope' },
+        h('option', { value: 'all', text: `Semua objek (${fmt(doc.items.length)})` }),
+        h('option', { value: 'view', text: `Tampilan saat ini (${fmt(ctx.viewItems().length)})` })));
+      return [
+        h('p', { class: 'muted', text: 'Kolom: Table, Type, Name, DataType, IsHidden, Expression, Description. SME cukup mengisi kolom Description, lalu file di-import kembali. Baris dicocokkan lewat Type + Table + Name.' }),
+        h('label', { class: 'field' }, h('span', { text: 'Delimiter' }), delim),
+        h('label', { class: 'field' }, h('span', { text: 'Cakupan' }), scope),
+        h('div', { class: 'actions' },
+          h('button', {
+            type: 'button', class: 'btn primary', text: 'Download CSV',
+            onclick: () => {
+              const items = scope.value === 'view' ? ctx.viewItems() : doc.items;
+              const csv = toCsv(items.map((it) => ({
+                table: it.table, type: it.type, name: it.name, dataType: it.dataType, isHidden: it.isHidden,
+                expression: it.expression ? truncate(it.expression, 1000) : '',
+                description: normalizeDescription(app.desc(it)),
+              })), { delimiter: delim.value });
+              app.savePrefs({ csvDelimiter: delim.value });
+              downloadText(baseName(doc.name) + '.descriptions.csv', csv, 'text/csv;charset=utf-8');
+              close();
+            },
+          }),
+          h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })),
+      ];
+    });
+  });
+
+  // ---------- CSV import ----------
+  importBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    let text;
+    try {
+      text = new TextDecoder('utf-8').decode(await file.arrayBuffer());
+    } catch {
+      toast('Gagal membaca file CSV', 'error');
+      return;
+    }
+    const doc = app.doc();
+    const res = matchCsv(text, doc.items, (k) => app.desc(doc.byKey.get(k)));
+    openModal('Import CSV: ' + file.name, (close) => {
+      if (res.errors.length) {
+        return [h('div', { class: 'banner error' }, res.errors.join(' ')), h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', text: 'Tutup', onclick: close }))];
+      }
+      const out = [
+        h('div', { class: 'stat-row' },
+          stat(res.matched, 'cocok'),
+          stat(res.changed.length, 'berubah'),
+          stat(res.notFound.length, 'tidak ditemukan'),
+          res.readOnly ? stat(res.readOnly, 'read-only (ref)') : null),
+        h('p', { class: 'muted', text: `Delimiter terdeteksi: "${res.delimiter === '\t' ? 'tab' : res.delimiter}". Hanya baris yang berubah yang akan diterapkan.` }),
+      ];
+      if (res.changed.length) {
+        out.push(h('h3', { text: 'Perubahan' }), h('div', { class: 'change-list' },
+          res.changed.slice(0, 100).map((c) => h('div', { class: 'change' },
+            h('div', { class: 'change-name' }, h('span', { class: 'type-badge ' + c.item.type, text: c.item.type[0].toUpperCase() }), ` ${c.item.table} › ${c.item.name}`),
+            h('div', { class: 'change-from', text: c.from ? truncate(c.from, 300) : '(kosong)' }),
+            h('div', { class: 'change-to', text: c.to ? truncate(c.to, 300) : '(dihapus)' }))),
+          res.changed.length > 100 ? h('p', { class: 'muted', text: `…dan ${fmt(res.changed.length - 100)} lagi` }) : null));
+      }
+      if (res.notFound.length) {
+        out.push(h('details', null, h('summary', { text: `${fmt(res.notFound.length)} baris tidak ditemukan di script` }),
+          h('ul', { class: 'small-list' }, res.notFound.slice(0, 200).map((n) => h('li', { text: `Baris ${n.line}: ${n.type} ${n.table} › ${n.name}` })))));
+      }
+      out.push(h('div', { class: 'actions' },
+        h('button', {
+          type: 'button', class: 'btn primary', id: 'csv-apply', text: `Terapkan ${fmt(res.changed.length)} perubahan`, disabled: res.changed.length === 0,
+          onclick: () => {
+            app.setMany(res.changed.map((c) => [c.key, c.to]));
+            toast(`${res.changed.length} deskripsi diperbarui dari CSV`, 'ok');
+            close();
+          },
+        }),
+        h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })));
+      return out;
+    });
+  });
+
+  // ---------- bulk fill ----------
+  bulkBtn.addEventListener('click', () => {
+    const selected = ctx.selectedItems();
+    const targetsAll = selected.length === 0;
+    const targets = targetsAll ? ctx.viewItems().filter((it) => it.editable) : selected;
+    if (!targets.length) {
+      toast('Tidak ada objek yang bisa diisi di tampilan ini.', 'error');
+      return;
+    }
+    openModal('Isi massal', (close) => {
+      const tpl = /** @type {HTMLTextAreaElement} */ (h('textarea', { class: 'tpl', rows: 3, id: 'bulk-template', placeholder: 'contoh: Kolom {name} pada tabel {table}' }));
+      tpl.value = app.prefs.lastTemplate || '';
+      const onlyEmpty = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'bulk-only-empty' }));
+      onlyEmpty.checked = true;
+      const preview = h('div', { class: 'preview' });
+      const applyBtn = h('button', { type: 'button', class: 'btn primary', id: 'bulk-apply' });
+      const pending = () => targets.filter((it) => !onlyEmpty.checked || normalizeDescription(app.desc(it)) === '');
+      const update = () => {
+        const list = pending();
+        applyBtn.textContent = `Terapkan ke ${fmt(list.length)} objek`;
+        /** @type {HTMLButtonElement} */ (applyBtn).disabled = list.length === 0 || normalizeDescription(tpl.value) === '';
+        clear(preview);
+        for (const it of list.slice(0, 3)) {
+          preview.append(h('div', { class: 'preview-row' }, h('strong', { text: `${it.table} › ${it.name}: ` }), applyTemplate(normalizeDescription(tpl.value), it) || '—'));
+        }
+      };
+      tpl.addEventListener('input', update);
+      onlyEmpty.addEventListener('change', update);
+      applyBtn.addEventListener('click', () => {
+        const t = normalizeDescription(tpl.value);
+        const list = pending();
+        app.savePrefs({ lastTemplate: tpl.value });
+        app.setMany(list.map((it) => [it.key, applyTemplate(t, it)]));
+        toast(`${list.length} deskripsi diisi`, 'ok');
+        close();
+      });
+      update();
+      setTimeout(() => tpl.focus(), 0);
+      return [
+        h('p', { class: 'muted', text: targetsAll
+          ? `Tidak ada baris yang dicentang, jadi target = ${fmt(targets.length)} objek di tampilan saat ini.`
+          : `Target = ${fmt(targets.length)} objek yang dicentang.` }),
+        h('label', { class: 'field' }, h('span', { text: 'Teks / template' }), tpl),
+        h('p', { class: 'muted small' }, 'Placeholder: ', h('code', { text: '{name}' }), ' nama objek, ', h('code', { text: '{table}' }), ' nama tabel, ', h('code', { text: '{type}' }), ' tabel/kolom/measure.'),
+        h('label', { class: 'check', for: 'bulk-only-empty' }, onlyEmpty, ' Hanya isi yang masih kosong'),
+        h('div', null, h('strong', { class: 'small', text: 'Pratinjau' }), preview),
+        h('div', { class: 'actions' }, applyBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })),
+      ];
+    });
+  });
+
+  // ---------- find & replace ----------
+  replaceBtn.addEventListener('click', () => {
+    const doc = app.doc();
+    openModal('Cari & ganti di deskripsi', (close) => {
+      const find = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'fr-find', placeholder: 'Cari' }));
+      const repl = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'fr-replace', placeholder: 'Ganti dengan' }));
+      const cs = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'fr-case' }));
+      const scope = /** @type {HTMLSelectElement} */ (h('select', { id: 'fr-scope' },
+        h('option', { value: 'all', text: 'Semua objek' }),
+        h('option', { value: 'view', text: 'Tampilan saat ini' }),
+        h('option', { value: 'selected', text: 'Yang dicentang' })));
+      const info = h('p', { class: 'muted' });
+      const applyBtn = h('button', { type: 'button', class: 'btn primary', id: 'fr-apply', text: 'Ganti semua' });
+      const compute = () => {
+        const items = (scope.value === 'view' ? ctx.viewItems() : scope.value === 'selected' ? ctx.selectedItems() : doc.items).filter((it) => it.editable);
+        const changes = [];
+        let total = 0;
+        for (const it of items) {
+          const r = replaceAllLiteral(app.desc(it), find.value, repl.value, cs.checked);
+          if (r.count) {
+            total += r.count;
+            changes.push([it.key, r.text]);
+          }
+        }
+        return { changes, total };
+      };
+      const update = () => {
+        const { changes, total } = compute();
+        info.textContent = find.value ? `${fmt(total)} kemunculan di ${fmt(changes.length)} deskripsi` : 'Ketik teks yang dicari.';
+        /** @type {HTMLButtonElement} */ (applyBtn).disabled = changes.length === 0;
+      };
+      for (const el of [find, repl, cs, scope]) el.addEventListener('input', update);
+      cs.addEventListener('change', update);
+      applyBtn.addEventListener('click', () => {
+        const { changes, total } = compute();
+        app.setMany(changes);
+        toast(`${total} kemunculan diganti di ${changes.length} deskripsi`, 'ok');
+        close();
+      });
+      update();
+      setTimeout(() => find.focus(), 0);
+      return [
+        h('label', { class: 'field' }, h('span', { text: 'Cari' }), find),
+        h('label', { class: 'field' }, h('span', { text: 'Ganti dengan' }), repl),
+        h('label', { class: 'field' }, h('span', { text: 'Cakupan' }), scope),
+        h('label', { class: 'check', for: 'fr-case' }, cs, ' Peka huruf besar/kecil'),
+        info,
+        h('div', { class: 'actions' }, applyBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })),
+      ];
+    });
+  });
+
+  refresh();
+  return { refresh };
+}
+
+function stat(n, label) {
+  return h('div', { class: 'stat' }, h('strong', { text: fmt(n) }), h('span', { text: label }));
+}
+
+/** File name without extension, safe for downloads. */
+function baseName(name) {
+  const n = name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '_').trim();
+  return n || 'tmdl';
+}
+
+exports.initTools = initTools; exports.baseName = baseName;
+});
+
+__def("ui/grid.js", function (exports) {
+// Step 2: editor. Sidebar of tables with progress, one active table rendered at a
+// time; cross-table views ("Semua kosong", search) are paginated (200 rows).
+
+const { itemStatus, progress } = __req("core/items.js");
+const { normalizeDescription } = __req("core/writer.js");
+const { truncate } = __req("core/text.js");
+const { h, $, clear, autoGrow, fmt } = __req("ui/dom.js");
+const { initTools } = __req("ui/tools.js");
+
+const PAGE_SIZE = 200;
+const LINE_MAX = 300;
+const SUMMARY_LINES = 3;
+const LONG_DESC = 500;
+const TYPE_ICON = { table: 'T', column: 'C', measure: 'M' };
+const TYPE_LABEL = { table: 'Tabel', column: 'Kolom', measure: 'Measure' };
+
+/**
+ * @param {any} app
+ * @param {HTMLElement} root
+ */
+function initGrid(app, root) {
+  const ui = {
+    /** @type {{kind:'table', table:string}|{kind:'empty'}} */
+    view: { kind: 'empty' },
+    filter: 'all',
+    hideHidden: !!app.prefs.hideHidden,
+    sort: app.prefs.sort === 'empty' ? 'empty' : 'name',
+    search: '',
+    page: 0,
+    /** @type {Map<string, HTMLElement>} */
+    rows: new Map(),
+    /** @type {Map<string, HTMLElement>} */
+    sideItems: new Map(),
+  };
+
+  // ---------- skeleton ----------
+  const sideList = h('div', { class: 'side-list', role: 'listbox', 'aria-label': 'Tabel' });
+  const sortSel = /** @type {HTMLSelectElement} */ (h('select', { 'aria-label': 'Urutkan tabel' },
+    h('option', { value: 'name', text: 'Urut: nama' }),
+    h('option', { value: 'empty', text: 'Urut: paling banyak kosong' })));
+  sortSel.value = ui.sort;
+  const emptyBtn = h('button', { type: 'button', class: 'side-item special', dataset: { view: 'empty' } },
+    h('span', { class: 'side-name', text: 'Semua yang kosong' }), h('span', { class: 'side-count', id: 'empty-count' }));
+
+  const search = /** @type {HTMLInputElement} */ (h('input', {
+    type: 'search', class: 'search', id: 'grid-search', placeholder: 'Cari nama tabel/kolom/measure (Ctrl+F)', 'aria-label': 'Cari nama',
+  }));
+  const filterSeg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Filter' },
+    ...[['all', 'Semua'], ['empty', 'Kosong'], ['filled', 'Terisi'], ['changed', 'Diubah']].map(([v, label]) =>
+      h('button', { type: 'button', role: 'radio', class: 'seg-btn', dataset: { filter: v }, text: label })));
+  const hideHiddenCb = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'hide-hidden' }));
+  hideHiddenCb.checked = ui.hideHidden;
+  const toolsBar = h('div', { class: 'tools' });
+  const draftSlot = h('div');
+  const viewHead = h('div', { class: 'view-head' });
+  const tbody = h('tbody');
+  const selectAll = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', 'aria-label': 'Pilih semua di tampilan ini' }));
+  const table = h('table', { class: 'grid' },
+    h('thead', null, h('tr', null,
+      h('th', { class: 'c-sel' }, selectAll),
+      h('th', { class: 'c-type', text: 'Tipe' }),
+      h('th', { class: 'c-name', text: 'Nama' }),
+      h('th', { class: 'c-dtype', text: 'DataType' }),
+      h('th', { class: 'c-expr', text: 'Ekspresi' }),
+      h('th', { class: 'c-desc', text: 'Deskripsi' }))),
+    tbody);
+  const emptyState = h('div', { class: 'empty-state', hidden: true });
+  const pager = h('div', { class: 'pager' });
+  const hint = h('p', { class: 'kbd-hint muted' },
+    h('kbd', { text: 'Enter' }), ' simpan & ke baris berikutnya · ',
+    h('kbd', { text: 'Shift+Enter' }), ' baris baru · ',
+    h('kbd', { text: 'Esc' }), ' batalkan perubahan sel · ',
+    h('kbd', { text: 'Ctrl+F' }), ' cari');
+
+  root.append(h('div', { class: 'edit-layout' },
+    h('aside', { class: 'sidebar' },
+      h('div', { class: 'side-head' }, h('strong', { text: 'Tabel' }), sortSel),
+      emptyBtn,
+      sideList),
+    h('section', { class: 'editor' },
+      draftSlot,
+      h('div', { class: 'toolbar' },
+        search,
+        filterSeg,
+        h('label', { class: 'check', for: 'hide-hidden' }, hideHiddenCb, ' Sembunyikan objek hidden')),
+      toolsBar,
+      viewHead,
+      h('div', { class: 'grid-wrap' }, table, emptyState),
+      pager,
+      hint)));
+
+  // ---------- derived data ----------
+  const doc = () => app.doc();
+
+  function currentGroup() {
+    if (ui.view.kind !== 'table') return null;
+    const key = ui.view.table;
+    return doc().tables.find((t) => t.key === key) || null;
+  }
+
+  function isCrossTable() {
+    return ui.search.trim() !== '' || ui.view.kind !== 'table';
+  }
+
+  /** Items of the current view after search / filter / hidden. */
+  function viewItems() {
+    const d = doc();
+    if (!d) return [];
+    const q = ui.search.trim().toLowerCase();
+    let base;
+    if (q) base = d.items.filter((it) => it.name.toLowerCase().includes(q) || it.table.toLowerCase().includes(q));
+    else if (ui.view.kind === 'empty') base = d.items.filter((it) => it.editable && !itemStatus(it, d.edits).filled);
+    else base = (currentGroup() || { items: [] }).items;
+    return base.filter((it) => {
+      if (ui.hideHidden && it.isHidden) return false;
+      if (ui.filter === 'all') return true;
+      const s = itemStatus(it, d.edits);
+      if (ui.filter === 'empty') return it.editable && !s.filled;
+      if (ui.filter === 'filled') return s.filled;
+      return s.changed;
+    });
+  }
+
+  // ---------- sidebar ----------
+  function renderSidebar() {
+    clear(sideList);
+    ui.sideItems.clear();
+    const d = doc();
+    if (!d) return;
+    const stats = new Map(d.tables.map((t) => [t.key, progress(t.items, d.edits)]));
+    const tables = d.tables.slice();
+    if (ui.sort === 'name') tables.sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+    else tables.sort((a, b) => {
+      const sa = stats.get(a.key);
+      const sb = stats.get(b.key);
+      return (sb.total - sb.filled) - (sa.total - sa.filled) || a.name.localeCompare(b.name);
+    });
+    for (const t of tables) {
+      const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { table: t.key }, title: t.name },
+        h('span', { class: 'side-name' }, t.name, t.editable ? null : h('span', { class: 'tag tiny', text: 'ref' })),
+        h('span', { class: 'side-count' }),
+        h('span', { class: 'side-bar' }, h('span')));
+      el.addEventListener('click', () => {
+        ui.view = { kind: 'table', table: t.key };
+        ui.search = '';
+        search.value = '';
+        ui.page = 0;
+        renderAll();
+      });
+      ui.sideItems.set(t.key, el);
+      updateSideItem(t.key, stats.get(t.key));
+      sideList.append(el);
+    }
+    markActiveSide();
+    updateEmptyCount();
+  }
+
+  function updateSideItem(tableKey, stat) {
+    const el = ui.sideItems.get(tableKey);
+    if (!el) return;
+    const d = doc();
+    const st = stat || progress(d.tables.find((t) => t.key === tableKey).items, d.edits);
+    el.querySelector('.side-count').textContent = `${st.filled}/${st.total}`;
+    const pct = st.total ? (st.filled / st.total) * 100 : 100;
+    /** @type {HTMLElement} */ (el.querySelector('.side-bar > span')).style.width = pct + '%';
+    el.classList.toggle('complete', st.total > 0 && st.filled === st.total);
+    el.classList.toggle('has-changes', st.changed > 0);
+  }
+
+  function updateEmptyCount() {
+    const d = doc();
+    if (!d) return;
+    const p = progress(d.items, d.edits);
+    $('#empty-count', root).textContent = fmt(p.total - p.filled);
+  }
+
+  function markActiveSide() {
+    const searching = ui.search.trim() !== '';
+    emptyBtn.classList.toggle('active', !searching && ui.view.kind === 'empty');
+    for (const [k, el] of ui.sideItems) {
+      const on = !searching && ui.view.kind === 'table' && ui.view.table === k;
+      el.classList.toggle('active', on);
+      el.setAttribute('aria-selected', String(on));
+    }
+  }
+
+  // ---------- grid ----------
+  function renderGrid() {
+    clear(tbody);
+    ui.rows.clear();
+    const d = doc();
+    if (!d) return;
+    const items = viewItems();
+    const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    if (ui.page >= pages) ui.page = pages - 1;
+    const slice = items.slice(ui.page * PAGE_SIZE, (ui.page + 1) * PAGE_SIZE);
+    const cross = isCrossTable();
+    const frag = document.createDocumentFragment();
+    for (const it of slice) frag.append(renderRow(it, cross));
+    tbody.append(frag);
+    requestAnimationFrame(() => {
+      for (const ta of tbody.querySelectorAll('textarea')) autoGrow(/** @type {HTMLTextAreaElement} */ (ta));
+    });
+
+    // View head.
+    clear(viewHead);
+    const q = ui.search.trim();
+    let title;
+    if (q) title = `Hasil pencarian "${q}"`;
+    else if (ui.view.kind === 'empty') title = 'Semua objek yang belum punya deskripsi';
+    else {
+      const g = currentGroup();
+      title = g ? g.name : '';
+    }
+    viewHead.append(
+      h('h2', { text: title }),
+      h('span', { class: 'muted', text: `${fmt(items.length)} objek` + (pages > 1 ? ` · halaman ${ui.page + 1}/${pages}` : '') }));
+    if (!q && ui.view.kind === 'table' && currentGroup() && !currentGroup().editable) {
+      viewHead.append(h('span', { class: 'tag warn', text: 'ref table: deskripsi tabel tidak bisa diubah di script ini' }));
+    }
+
+    // Empty state.
+    emptyState.hidden = items.length > 0;
+    table.hidden = items.length === 0;
+    if (!items.length) {
+      clear(emptyState);
+      emptyState.append(h('p', {
+        text: ui.view.kind === 'empty' && !q && ui.filter === 'all'
+          ? 'Semua objek sudah punya deskripsi. 🎉'
+          : 'Tidak ada objek yang cocok dengan filter ini.',
+      }));
+    }
+
+    // Pager.
+    clear(pager);
+    if (pages > 1) {
+      pager.append(
+        h('button', { type: 'button', class: 'btn small', text: '← Sebelumnya', disabled: ui.page === 0, onclick: () => goPage(ui.page - 1) }),
+        h('span', { class: 'muted', text: `${fmt(ui.page * PAGE_SIZE + 1)}–${fmt(Math.min(items.length, (ui.page + 1) * PAGE_SIZE))} dari ${fmt(items.length)}` }),
+        h('button', { type: 'button', class: 'btn small', text: 'Berikutnya →', disabled: ui.page >= pages - 1, onclick: () => goPage(ui.page + 1) }));
+    }
+    updateSelectAll();
+  }
+
+  function goPage(p) {
+    ui.page = p;
+    renderGrid();
+    root.querySelector('.grid-wrap').scrollIntoView({ block: 'start' });
+  }
+
+  function exprSummary(expr) {
+    const lines = expr.split('\n');
+    const short = lines.slice(0, SUMMARY_LINES).map((l) => truncate(l, LINE_MAX)).join('\n');
+    const full = lines.map((l) => truncate(l, LINE_MAX)).join('\n');
+    return { short, full, more: lines.length > SUMMARY_LINES || full !== short };
+  }
+
+  function renderRow(it, cross) {
+    const d = doc();
+    const st = itemStatus(it, d.edits);
+    const ta = /** @type {HTMLTextAreaElement} */ (h('textarea', {
+      class: 'desc', rows: 1, spellcheck: true, dataset: { key: it.key },
+      'aria-label': `Deskripsi ${TYPE_LABEL[it.type]} ${it.name}`,
+      disabled: !it.editable,
+      placeholder: it.editable ? 'Tulis deskripsi…' : 'ref table: deskripsi tidak bisa diubah dari script parsial ini',
+    }));
+    ta.value = app.desc(it);
+    const resetBtn = h('button', { type: 'button', class: 'icon-btn reset', title: 'Kembalikan ke deskripsi asli', 'aria-label': 'Reset', text: '↺' });
+    const meta = h('div', { class: 'desc-meta' }, h('span', { class: 'changed-mark', text: 'diubah' }), h('span', { class: 'len-warn' }), resetBtn);
+    const cb = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', 'aria-label': 'Pilih ' + it.name, disabled: !it.editable }));
+    cb.checked = d.selected.has(it.key);
+
+    let exprCell = null;
+    if (it.expression) {
+      const s = exprSummary(it.expression);
+      const pre = h('pre', { class: 'expr', title: s.full.length < 4000 ? s.full : undefined, text: s.short });
+      exprCell = [pre];
+      if (s.more) {
+        const btn = h('button', { type: 'button', class: 'link-btn', text: 'selengkapnya' });
+        btn.addEventListener('click', () => {
+          const open = pre.classList.toggle('expanded');
+          pre.textContent = open ? s.full : s.short;
+          btn.textContent = open ? 'ringkas' : 'selengkapnya';
+        });
+        exprCell.push(btn);
+      }
+    }
+
+    const nameCell = h('td', { class: 'c-name' },
+      cross && it.type !== 'table' ? h('span', { class: 'table-prefix', text: it.table + ' › ' }) : null,
+      h('span', { class: 'obj-name', text: it.name }),
+      it.isHidden ? h('span', { class: 'tag tiny', text: 'hidden' }) : null,
+      it.occurrences > 1 ? h('span', { class: 'tag tiny', title: `Dideklarasikan ${it.occurrences} kali; semua kemunculan akan diperbarui`, text: '×' + it.occurrences }) : null);
+
+    const row = h('tr', { class: 'row t-' + it.type, dataset: { key: it.key } },
+      h('td', { class: 'c-sel' }, cb),
+      h('td', { class: 'c-type' }, h('span', { class: 'type-badge ' + it.type, title: TYPE_LABEL[it.type], text: TYPE_ICON[it.type] })),
+      nameCell,
+      h('td', { class: 'c-dtype', text: it.dataType || '' }),
+      h('td', { class: 'c-expr' }, exprCell),
+      h('td', { class: 'c-desc' }, ta, meta));
+    row.classList.toggle('is-changed', st.changed);
+    row.classList.toggle('is-empty', it.editable && !st.filled);
+    row.classList.toggle('is-readonly', !it.editable);
+    updateLen(row, ta.value);
+
+    ta.addEventListener('focus', () => {
+      ta.dataset.before = ta.value;
+    });
+    ta.addEventListener('input', () => {
+      autoGrow(ta);
+      app.setDesc(it.key, ta.value);
+    });
+    ta.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        focusNext(row);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        const before = ta.dataset.before ?? app.desc(it);
+        ta.value = before;
+        autoGrow(ta);
+        app.setDesc(it.key, before);
+      }
+    });
+    resetBtn.addEventListener('click', () => {
+      ta.value = it.originalDesc;
+      autoGrow(ta);
+      app.setDesc(it.key, it.originalDesc);
+      ta.focus();
+    });
+    cb.addEventListener('change', () => {
+      if (cb.checked) d.selected.add(it.key);
+      else d.selected.delete(it.key);
+      updateSelectAll();
+      tools.refresh();
+    });
+    ui.rows.set(it.key, row);
+    return row;
+  }
+
+  function updateLen(row, value) {
+    const n = normalizeDescription(value).length;
+    row.querySelector('.len-warn').textContent = n > LONG_DESC ? `${fmt(n)} karakter (panjang)` : '';
+  }
+
+  function focusNext(row) {
+    let next = /** @type {HTMLElement|null} */ (row.nextElementSibling);
+    while (next) {
+      const ta = /** @type {HTMLTextAreaElement|null} */ (next.querySelector('textarea:not([disabled])'));
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        return;
+      }
+      next = /** @type {HTMLElement|null} */ (next.nextElementSibling);
+    }
+    /** @type {HTMLElement} */ (document.activeElement).blur();
+  }
+
+  function refreshRow(key) {
+    const row = ui.rows.get(key);
+    const d = doc();
+    const it = d.byKey.get(key);
+    if (!row || !it) return;
+    const st = itemStatus(it, d.edits);
+    row.classList.toggle('is-changed', st.changed);
+    row.classList.toggle('is-empty', it.editable && !st.filled);
+    const ta = /** @type {HTMLTextAreaElement} */ (row.querySelector('textarea'));
+    if (document.activeElement !== ta && ta.value !== app.desc(it)) {
+      ta.value = app.desc(it);
+      autoGrow(ta);
+    }
+    updateLen(row, ta.value);
+  }
+
+  // ---------- selection ----------
+  function updateSelectAll() {
+    const d = doc();
+    if (!d) return;
+    const items = viewItems().filter((it) => it.editable);
+    const sel = items.filter((it) => d.selected.has(it.key)).length;
+    selectAll.checked = items.length > 0 && sel === items.length;
+    selectAll.indeterminate = sel > 0 && sel < items.length;
+    selectAll.title = `Pilih semua ${items.length} objek di tampilan ini (semua halaman)`;
+  }
+  selectAll.addEventListener('change', () => {
+    const d = doc();
+    const items = viewItems().filter((it) => it.editable);
+    for (const it of items) {
+      if (selectAll.checked) d.selected.add(it.key);
+      else d.selected.delete(it.key);
+    }
+    for (const [k, row] of ui.rows) {
+      const cb = /** @type {HTMLInputElement} */ (row.querySelector('.c-sel input'));
+      cb.checked = d.selected.has(k);
+    }
+    updateSelectAll();
+    tools.refresh();
+  });
+
+  // ---------- draft banner ----------
+  function renderDraft() {
+    clear(draftSlot);
+    const d = doc();
+    if (!d || !d.draft) return;
+    draftSlot.append(h('div', { class: 'banner info' },
+      h('span', null, `Ada draft tersimpan (${fmt(d.draft.edits.length)} perubahan, ${new Date(d.draft.savedAt).toLocaleString('id-ID')}). Mengedit tanpa memulihkan akan menimpanya.`),
+      h('span', { class: 'banner-actions' },
+        h('button', { class: 'btn small primary', type: 'button', text: 'Pulihkan', onclick: () => app.restoreDraft(d) }),
+        h('button', { class: 'btn small ghost', type: 'button', text: 'Abaikan', onclick: () => app.discardDraft(d) }))));
+  }
+
+  // ---------- toolbar wiring ----------
+  function markFilter() {
+    for (const b of filterSeg.querySelectorAll('.seg-btn')) {
+      const on = /** @type {HTMLElement} */ (b).dataset.filter === ui.filter;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+  }
+  filterSeg.addEventListener('click', (e) => {
+    const b = /** @type {HTMLElement} */ (e.target).closest('.seg-btn');
+    if (!b) return;
+    ui.filter = /** @type {HTMLElement} */ (b).dataset.filter;
+    ui.page = 0;
+    markFilter();
+    renderGrid();
+  });
+  let searchTimer = 0;
+  search.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      ui.search = search.value;
+      ui.page = 0;
+      markActiveSide();
+      renderGrid();
+    }, 150);
+  });
+  search.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && search.value) {
+      search.value = '';
+      ui.search = '';
+      markActiveSide();
+      renderGrid();
+    }
+  });
+  hideHiddenCb.addEventListener('change', () => {
+    ui.hideHidden = hideHiddenCb.checked;
+    app.savePrefs({ hideHidden: ui.hideHidden });
+    ui.page = 0;
+    renderGrid();
+  });
+  sortSel.addEventListener('change', () => {
+    ui.sort = /** @type {any} */ (sortSel.value);
+    app.savePrefs({ sort: ui.sort });
+    renderSidebar();
+  });
+  emptyBtn.addEventListener('click', () => {
+    ui.view = { kind: 'empty' };
+    ui.search = '';
+    search.value = '';
+    ui.page = 0;
+    renderAll();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (app.step !== 'edit') return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      search.focus();
+      search.select();
+    }
+  });
+
+  const tools = initTools(app, toolsBar, {
+    viewItems,
+    selectedItems: () => {
+      const d = doc();
+      return d ? d.items.filter((it) => d.selected.has(it.key) && it.editable) : [];
+    },
+  });
+
+  // ---------- lifecycle ----------
+  function defaultView() {
+    const d = doc();
+    if (!d) return;
+    const p = progress(d.items, d.edits);
+    const firstEditable = d.tables.find((t) => t.items.some((i) => i.editable));
+    // Small scripts: open the first table. Large models with gaps: start at "Semua kosong".
+    if (d.tables.length <= 3 && firstEditable) ui.view = { kind: 'table', table: firstEditable.key };
+    else if (p.total - p.filled > 0) ui.view = { kind: 'empty' };
+    else if (firstEditable) ui.view = { kind: 'table', table: firstEditable.key };
+    ui.page = 0;
+    ui.search = '';
+    search.value = '';
+  }
+
+  function renderAll() {
+    renderDraft();
+    renderSidebar();
+    renderGrid();
+    tools.refresh();
+  }
+
+  markFilter();
+  app.on('docs', () => {
+    defaultView();
+    renderAll();
+  });
+  app.on('active', () => {
+    defaultView();
+    renderAll();
+  });
+  app.on('step', (s) => {
+    if (s === 'edit') renderAll();
+  });
+  app.on('draft', () => renderDraft());
+  app.on('edit', (key) => {
+    refreshRow(key);
+    const it = doc().byKey.get(key);
+    if (it) updateSideItem(it.table.toLowerCase());
+    updateEmptyCount();
+  });
+  app.on('bulk', () => {
+    if (app.step === 'edit') renderAll();
+  });
+}
+
+exports.initGrid = initGrid;
+});
+
+__def("core/validator.js", function (exports) {
+// Validator (plan §7.3): proves that only description lines of recognised
+// objects differ between the original and the output.
+
+const { parseTmdl } = __req("core/parser.js");
+
+/**
+ * @typedef {Object} ValidationIssue
+ * @property {number} line      1-based line in the output (or original when not applicable)
+ * @property {string} message
+ * @property {string=} expected
+ * @property {string=} actual
+ */
+
+/**
+ * @typedef {Object} ValidationResult
+ * @property {boolean} ok
+ * @property {ValidationIssue[]} errors
+ */
+
+const MAX_ERRORS = 20;
+
+/**
+ * Lines that are NOT part of a recognised description range, with their line numbers.
+ * @param {import('./parser.js').ParseResult} parsed
+ */
+function skeleton(parsed) {
+  const skip = new Uint8Array(parsed.lines.length);
+  for (const o of parsed.objects) {
+    for (let j = o.descStart; j < o.declLine; j++) skip[j] = 1;
+  }
+  const out = [];
+  for (let i = 0; i < parsed.lines.length; i++) {
+    if (!skip[i]) out.push({ line: i + 1, text: parsed.lines[i] });
+  }
+  return out;
+}
+
+/**
+ * @param {string} original
+ * @param {string} output
+ * @returns {ValidationResult}
+ */
+function validateRoundTrip(original, output) {
+  /** @type {ValidationIssue[]} */
+  const errors = [];
+  const push = (e) => {
+    if (errors.length < MAX_ERRORS) errors.push(e);
+  };
+  const a = parseTmdl(original);
+  const b = parseTmdl(output);
+
+  if (a.eol !== b.eol) push({ line: 0, message: 'Line ending berubah.', expected: JSON.stringify(a.eol), actual: JSON.stringify(b.eol) });
+  if (a.hasBom !== b.hasBom) push({ line: 0, message: 'BOM berubah.', expected: String(a.hasBom), actual: String(b.hasBom) });
+  if (a.trailingNewline !== b.trailingNewline) {
+    push({ line: 0, message: 'Newline di akhir file berubah.', expected: String(a.trailingNewline), actual: String(b.trailingNewline) });
+  }
+
+  // Same objects, same order.
+  const ka = a.objects.map((o) => o.key);
+  const kb = b.objects.map((o) => o.key);
+  if (ka.length !== kb.length) {
+    push({ line: 0, message: 'Jumlah objek berubah.', expected: String(ka.length), actual: String(kb.length) });
+  }
+  for (let i = 0; i < Math.min(ka.length, kb.length); i++) {
+    if (ka[i] !== kb[i]) {
+      push({ line: b.objects[i].declLine + 1, message: 'Urutan atau identitas objek berubah.', expected: ka[i], actual: kb[i] });
+      break;
+    }
+  }
+
+  // Skeleton must be identical line by line, whitespace included.
+  const sa = skeleton(a);
+  const sb = skeleton(b);
+  const n = Math.max(sa.length, sb.length);
+  for (let i = 0; i < n; i++) {
+    const x = sa[i];
+    const y = sb[i];
+    if (!x || !y || x.text !== y.text) {
+      push({
+        line: y ? y.line : x ? x.line : 0,
+        message: 'Baris di luar deskripsi berubah.',
+        expected: x ? x.text : '(tidak ada)',
+        actual: y ? y.text : '(tidak ada)',
+      });
+      if (errors.length >= MAX_ERRORS) break;
+      // One mismatch usually shifts everything after it; stop after a few.
+      if (errors.filter((e) => e.message.startsWith('Baris di luar')).length >= 5) break;
+    }
+  }
+
+  // Description lines must not carry stray CR/LF.
+  for (const o of b.objects) {
+    for (let j = o.descStart; j < o.declLine; j++) {
+      if (/[\r\n]/.test(b.lines[j])) push({ line: j + 1, message: 'Baris deskripsi mengandung CR/LF di tengahnya.', actual: JSON.stringify(b.lines[j]) });
+    }
+  }
+
+  // Descriptions of non-editable objects (ref table) must not change.
+  if (ka.length === kb.length) {
+    for (let i = 0; i < a.objects.length; i++) {
+      const oa = a.objects[i];
+      const ob = b.objects[i];
+      if (!oa.editable && oa.key === ob.key && oa.originalDesc !== ob.originalDesc) {
+        push({ line: ob.declLine + 1, message: 'Deskripsi objek non-editable (ref) berubah.', expected: oa.originalDesc, actual: ob.originalDesc });
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+exports.skeleton = skeleton; exports.validateRoundTrip = validateRoundTrip;
+});
+
+__def("core/diff.js", function (exports) {
+// Line diff for the output preview. Myers O(ND) after trimming the common
+// prefix/suffix, so a 100k-line model with a few description edits is cheap.
+
+/**
+ * @typedef {{type:'eq'|'del'|'add', a:number, b:number, text:string}} DiffOp
+ *   a/b = 0-based line index in old/new (-1 when not applicable)
+ */
+
+/**
+ * @param {string[]} a old lines
+ * @param {string[]} b new lines
+ * @param {number=} maxD give up beyond this edit distance (fallback: replace block)
+ * @returns {DiffOp[]}
+ */
+function lineDiff(a, b, maxD = 3000) {
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+  /** @type {DiffOp[]} */
+  const ops = [];
+  for (let i = 0; i < start; i++) ops.push({ type: 'eq', a: i, b: i, text: a[i] });
+  const mid = myers(a, start, endA, b, start, endB, maxD);
+  for (const op of mid) ops.push(op);
+  for (let i = endA, j = endB; i < a.length; i++, j++) ops.push({ type: 'eq', a: i, b: j, text: a[i] });
+  return ops;
+}
+
+function myers(a, a0, a1, b, b0, b1, maxD) {
+  const N = a1 - a0;
+  const M = b1 - b0;
+  if (N === 0 && M === 0) return [];
+  const replaceAll = () => {
+    const out = [];
+    for (let i = a0; i < a1; i++) out.push({ type: 'del', a: i, b: -1, text: a[i] });
+    for (let j = b0; j < b1; j++) out.push({ type: 'add', a: -1, b: j, text: b[j] });
+    return out;
+  };
+  if (N === 0 || M === 0) return replaceAll();
+  const max = Math.min(N + M, maxD);
+  const off = max + 1;
+  const v = new Int32Array(2 * max + 3);
+  const trace = [];
+  let found = -1;
+  for (let d = 0; d <= max; d++) {
+    trace.push({ lo: off - d - 1, arr: v.slice(off - d - 1, off + d + 2) });
+    for (let k = -d; k <= d; k += 2) {
+      let x;
+      if (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) x = v[off + k + 1];
+      else x = v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < N && y < M && a[a0 + x] === b[b0 + y]) {
+        x++;
+        y++;
+      }
+      v[off + k] = x;
+      if (x >= N && y >= M) {
+        found = d;
+        break;
+      }
+    }
+    if (found >= 0) break;
+  }
+  if (found < 0) return replaceAll();
+
+  // Backtrack.
+  const out = [];
+  let x = N;
+  let y = M;
+  for (let d = found; d > 0; d--) {
+    const t = trace[d];
+    const at = (kk) => t.arr[off + kk - t.lo];
+    const k = x - y;
+    let prevK;
+    if (k === -d || (k !== d && at(k - 1) < at(k + 1))) prevK = k + 1;
+    else prevK = k - 1;
+    const prevX = at(prevK);
+    const prevY = prevX - prevK;
+    while (x > prevX && y > prevY) {
+      x--;
+      y--;
+      out.push({ type: 'eq', a: a0 + x, b: b0 + y, text: a[a0 + x] });
+    }
+    if (x === prevX) {
+      y--;
+      out.push({ type: 'add', a: -1, b: b0 + y, text: b[b0 + y] });
+    } else {
+      x--;
+      out.push({ type: 'del', a: a0 + x, b: -1, text: a[a0 + x] });
+    }
+  }
+  while (x > 0 && y > 0) {
+    x--;
+    y--;
+    out.push({ type: 'eq', a: a0 + x, b: b0 + y, text: a[a0 + x] });
+  }
+  return out.reverse();
+}
+
+/**
+ * Group diff ops into hunks with `context` lines around each change.
+ * @param {DiffOp[]} ops
+ * @param {number=} context
+ * @returns {{ops:DiffOp[], aStart:number, bStart:number}[]}
+ */
+function toHunks(ops, context = 2) {
+  const changed = [];
+  ops.forEach((op, i) => {
+    if (op.type !== 'eq') changed.push(i);
+  });
+  const hunks = [];
+  let i = 0;
+  while (i < changed.length) {
+    let from = Math.max(0, changed[i] - context);
+    let to = Math.min(ops.length - 1, changed[i] + context);
+    let j = i + 1;
+    while (j < changed.length && changed[j] - context <= to + 1) {
+      to = Math.min(ops.length - 1, changed[j] + context);
+      j++;
+    }
+    const slice = ops.slice(from, to + 1);
+    let aStart = -1;
+    let bStart = -1;
+    for (const op of slice) {
+      if (aStart < 0 && op.a >= 0) aStart = op.a;
+      if (bStart < 0 && op.b >= 0) bStart = op.b;
+    }
+    hunks.push({ ops: slice, aStart, bStart });
+    i = j;
+  }
+  return hunks;
+}
+
+/** Count added / removed lines. */
+function diffStats(ops) {
+  let added = 0;
+  let removed = 0;
+  for (const op of ops) {
+    if (op.type === 'add') added++;
+    else if (op.type === 'del') removed++;
+  }
+  return { added, removed };
+}
+
+exports.lineDiff = lineDiff; exports.toHunks = toHunks; exports.diffStats = diffStats;
+});
+
+__def("ui/output-panel.js", function (exports) {
+// Step 3: output. Writer + validator from core; diff preview; Copy / Download.
+
+const { applyDescriptions } = __req("core/writer.js");
+const { validateRoundTrip } = __req("core/validator.js");
+const { lineDiff, toHunks, diffStats } = __req("core/diff.js");
+const { splitText, truncate, BOM } = __req("core/text.js");
+const { progress } = __req("core/items.js");
+const { h, clear, toast, downloadText, copyText, fmt } = __req("ui/dom.js");
+const { baseName } = __req("ui/tools.js");
+
+const DIFF_LINE_MAX = 2000;
+const MAX_HUNKS = 300;
+
+/**
+ * Build output + validation for a document.
+ * @param {any} doc
+ */
+function computeOutput(doc) {
+  const output = applyDescriptions(doc.parsed, doc.edits);
+  const validation = validateRoundTrip(doc.text, output);
+  return { output, validation, unchanged: output === doc.text };
+}
+
+/**
+ * @param {any} app
+ * @param {HTMLElement} root
+ */
+function initOutput(app, root) {
+  const body = h('div', { class: 'output-layout' });
+  root.append(body);
+
+  function render() {
+    clear(body);
+    const doc = app.doc();
+    if (!doc) return;
+    const { output, validation, unchanged } = computeOutput(doc);
+    const p = progress(doc.items, doc.edits);
+    const isFullModel = doc.parsed.hasModel && doc.parsed.hasCreateOrReplace;
+    const outName = doc.fromFile ? doc.name : baseName(doc.name) + '.tmdl';
+
+    // Status.
+    const status = validation.ok
+      ? h('div', { class: 'banner ok', id: 'validation-status' },
+        h('strong', { text: '✓ Validasi lolos.' }),
+        ' Hanya baris deskripsi yang berbeda dari input. ',
+        unchanged ? 'Belum ada perubahan deskripsi.' : `${fmt(p.changed)} deskripsi diubah.`)
+      : h('div', { class: 'banner error', id: 'validation-status' },
+        h('strong', { text: '✕ Validasi gagal. Copy dan Download diblokir.' }),
+        ' Ada perubahan di luar baris deskripsi. Ini bug, jadi mohon laporkan beserta contoh input.',
+        h('ul', { class: 'errors' }, validation.errors.map((e) => h('li', null,
+          e.line ? `Baris ${e.line}: ` : '', e.message,
+          e.expected !== undefined ? h('div', { class: 'mono small' }, 'diharapkan: ', truncate(e.expected, 300)) : null,
+          e.actual !== undefined ? h('div', { class: 'mono small' }, 'didapat: ', truncate(e.actual, 300)) : null))));
+
+    const copyBtn = h('button', {
+      type: 'button', class: 'btn primary', id: 'copy-btn', disabled: !validation.ok, text: 'Copy to clipboard',
+      onclick: async () => {
+        // The clipboard never carries a BOM; TMDL view does not need it.
+        const text = output.startsWith(BOM) ? output.slice(1) : output;
+        const ok = await copyText(text);
+        toast(ok ? 'Script disalin. Tempel di tab baru TMDL view lalu klik Apply.' : 'Gagal menyalin. Pakai Download.', ok ? 'ok' : 'error');
+      },
+    });
+    const dlBtn = h('button', {
+      type: 'button', class: 'btn', id: 'download-btn', disabled: !validation.ok, text: 'Download .tmdl',
+      onclick: () => downloadText(outName, output),
+    });
+    const dlOrig = h('button', {
+      type: 'button', class: 'btn ghost', id: 'download-original', text: 'Download original (backup)',
+      onclick: () => downloadText(baseName(doc.name) + '.original.tmdl', doc.text),
+    });
+
+    body.append(
+      h('div', { class: 'card' },
+        h('div', { class: 'card-head' }, h('h1', { text: 'Output' }), h('span', { class: 'muted', text: doc.name })),
+        status,
+        isFullModel ? h('div', { class: 'banner warn' },
+          h('strong', { text: 'Script seluruh model.' }),
+          ' Apply akan menjalankan createOrReplace untuk seluruh model. Validator menjamin hanya deskripsi yang berubah, tetapi tetap simpan salinan script asli (tombol "Download original") dan simpan PBIP/commit git sebelum Apply.') : null,
+        h('div', { class: 'actions' }, copyBtn, dlBtn, dlOrig),
+        guide()),
+    );
+    body.append(diffView(doc.text, output));
+    if (app.docs.length > 1) body.append(allDocs());
+  }
+
+  function guide() {
+    return h('details', { class: 'guide', open: true },
+      h('summary', { text: 'Cara menerapkan di Power BI Desktop' }),
+      h('ol', null,
+        h('li', { text: 'Simpan dulu: save sebagai PBIP atau commit git, supaya mudah kembali kalau perlu.' }),
+        h('li', { text: 'Buka TMDL view, lalu buat tab baru (+).' }),
+        h('li', { text: 'Tempel script hasil Copy (Ctrl+V).' }),
+        h('li', { text: 'Klik Apply. Tidak ada refresh data yang dipicu.' }),
+        h('li', { text: 'Cek deskripsi di Model view (panel Properties) atau dengan hover di Data pane.' })));
+  }
+
+  function diffView(original, output) {
+    const a = splitText(original).lines;
+    const b = splitText(output).lines;
+    const ops = lineDiff(a, b);
+    const st = diffStats(ops);
+    const hunks = toHunks(ops, 2);
+    const wrap = h('div', { class: 'card' },
+      h('div', { class: 'card-head' },
+        h('h2', { text: 'Perubahan' }),
+        h('span', { class: 'muted', id: 'diff-stats', text: `+${fmt(st.added)} / −${fmt(st.removed)} baris · ${fmt(hunks.length)} blok` })));
+    if (!hunks.length) {
+      wrap.append(h('p', { class: 'muted', text: 'Tidak ada perbedaan. Output identik byte-per-byte dengan input.' }));
+      return wrap;
+    }
+    const diff = h('div', { class: 'diff', role: 'table', 'aria-label': 'Diff' });
+    for (const hk of hunks.slice(0, MAX_HUNKS)) {
+      const block = h('div', { class: 'hunk' });
+      for (const op of hk.ops) {
+        block.append(h('div', { class: 'dl ' + op.type },
+          h('span', { class: 'ln', text: op.a >= 0 ? String(op.a + 1) : '' }),
+          h('span', { class: 'ln', text: op.b >= 0 ? String(op.b + 1) : '' }),
+          h('span', { class: 'sign', text: op.type === 'add' ? '+' : op.type === 'del' ? '−' : ' ' }),
+          h('span', { class: 'code', text: truncate(op.text, DIFF_LINE_MAX) })));
+      }
+      diff.append(block);
+    }
+    wrap.append(diff);
+    if (hunks.length > MAX_HUNKS) wrap.append(h('p', { class: 'muted', text: `…dan ${fmt(hunks.length - MAX_HUNKS)} blok lagi (tidak ditampilkan).` }));
+    return wrap;
+  }
+
+  function allDocs() {
+    const card = h('div', { class: 'card' }, h('h2', { text: 'Semua dokumen' }));
+    const list = h('ul', { class: 'doc-list' });
+    app.docs.forEach((d, i) => {
+      const r = computeOutput(d);
+      const pr = progress(d.items, d.edits);
+      list.append(h('li', null,
+        h('span', { class: r.validation.ok ? 'dot ok' : 'dot error' }),
+        h('button', { type: 'button', class: 'link-btn', text: d.name, onclick: () => app.setActive(i) }),
+        h('span', { class: 'muted', text: ` · ${fmt(pr.changed)} diubah` }),
+        h('button', {
+          type: 'button', class: 'btn small', text: 'Download', disabled: !r.validation.ok,
+          onclick: () => downloadText(d.fromFile ? d.name : baseName(d.name) + '.tmdl', r.output),
+        })));
+    });
+    card.append(list);
+    return card;
+  }
+
+  app.on('step', (s) => {
+    if (s === 'output') render();
+  });
+  app.on('active', () => {
+    if (app.step === 'output') render();
+  });
+  app.on('docs', () => clear(body));
+}
+
+exports.computeOutput = computeOutput; exports.initOutput = initOutput;
+});
+
+__def("ui/app.js", function (exports) {
+// Bootstrap + state store. Panels get the `app` object and subscribe to events.
+// UI never edits TMDL text itself: it only keeps an edits Map and calls core.
+
+const { parseTmdl } = __req("core/parser.js");
+const { buildItems, progress, currentDescription } = __req("core/items.js");
+const { normalizeDescription } = __req("core/writer.js");
+const { hashText } = __req("core/text.js");
+const { $, debounce, fmt } = __req("ui/dom.js");
+const storage = __req("ui/storage.js");
+const { initInput } = __req("ui/input-panel.js");
+const { initGrid } = __req("ui/grid.js");
+const { initOutput } = __req("ui/output-panel.js");
+
+/**
+ * @typedef {Object} Doc
+ * @property {number} id
+ * @property {string} name        file name or "Script (tempel)"
+ * @property {boolean} fromFile
+ * @property {string} text        original text, untouched
+ * @property {string} hash
+ * @property {import('../core/parser.js').ParseResult} parsed
+ * @property {import('../core/items.js').EditorItem[]} items
+ * @property {Map<string, import('../core/items.js').EditorItem>} byKey
+ * @property {import('../core/items.js').TableGroup[]} tables
+ * @property {Map<string,string>} edits
+ * @property {import('./storage.js').Draft|null} draft   draft offered for restore
+ * @property {Set<string>} selected
+ */
+
+const listeners = new Map();
+let nextId = 1;
+
+const app = {
+  /** @type {Doc[]} */
+  docs: [],
+  active: 0,
+  /** @type {'input'|'edit'|'output'} */
+  step: 'input',
+  prefs: storage.loadPrefs(),
+
+  /** @returns {Doc|null} */
+  doc() {
+    return this.docs[this.active] || null;
+  },
+
+  on(evt, fn) {
+    if (!listeners.has(evt)) listeners.set(evt, []);
+    listeners.get(evt).push(fn);
+  },
+
+  emit(evt, payload) {
+    for (const fn of listeners.get(evt) || []) fn(payload);
+  },
+
+  /**
+   * Parse new sources and replace the current documents.
+   * @param {{name:string, text:string, fromFile:boolean}[]} sources
+   */
+  loadDocs(sources) {
+    saveNow.flush();
+    this.docs = sources.map((s) => {
+      const parsed = parseTmdl(s.text);
+      const { items, byKey, tables } = buildItems(parsed);
+      const hash = hashText(s.text);
+      return {
+        id: nextId++,
+        name: s.name,
+        fromFile: s.fromFile,
+        text: s.text,
+        hash,
+        parsed,
+        items,
+        byKey,
+        tables,
+        edits: new Map(),
+        draft: storage.loadDraft(hash),
+        selected: new Set(),
+      };
+    });
+    this.active = 0;
+    this.emit('docs');
+    this.updateChrome();
+  },
+
+  setActive(i) {
+    if (i === this.active || !this.docs[i]) return;
+    saveNow.flush();
+    this.active = i;
+    this.emit('active');
+    this.updateChrome();
+  },
+
+  /** Current description text for an item of the active doc. */
+  desc(item, doc = this.doc()) {
+    return currentDescription(item, doc.edits);
+  },
+
+  /**
+   * Record an edit. Values equal to the original are dropped from the map.
+   * @param {string} key
+   * @param {string} value
+   * @param {{silent?:boolean}} [opt]
+   */
+  setDesc(key, value, opt = {}, doc = this.doc()) {
+    const item = doc.byKey.get(key);
+    if (!item || !item.editable) return;
+    if (doc.draft) {
+      // Editing without restoring = starting fresh; the old draft will be overwritten.
+      doc.draft = null;
+      this.emit('draft', doc);
+    }
+    if (normalizeDescription(value) === normalizeDescription(item.originalDesc)) doc.edits.delete(key);
+    else doc.edits.set(key, value);
+    saveNow();
+    if (!opt.silent) this.emit('edit', key);
+    this.updateProgress();
+  },
+
+  /** Apply many edits at once (CSV import, bulk fill, replace). */
+  setMany(pairs, doc = this.doc()) {
+    for (const [k, v] of pairs) this.setDesc(k, v, { silent: true }, doc);
+    this.emit('bulk');
+    this.updateProgress();
+  },
+
+  restoreDraft(doc) {
+    const draft = doc.draft;
+    if (!draft) return 0;
+    doc.draft = null;
+    let n = 0;
+    for (const [k, v] of draft.edits) {
+      const item = doc.byKey.get(k);
+      if (item && item.editable) {
+        this.setDesc(k, v, { silent: true }, doc);
+        n++;
+      }
+    }
+    this.emit('draft', doc);
+    this.emit('bulk');
+    this.updateProgress();
+    return n;
+  },
+
+  discardDraft(doc) {
+    if (doc.draft) storage.deleteDraft(doc.hash);
+    doc.draft = null;
+    this.emit('draft', doc);
+  },
+
+  savePrefs(patch) {
+    Object.assign(this.prefs, patch);
+    storage.savePrefs(patch);
+  },
+
+  goto(step) {
+    if (step !== 'input' && !this.doc()) return;
+    this.step = step;
+    for (const s of ['input', 'edit', 'output']) {
+      const tab = $('#tab-' + s);
+      const panel = $('#panel-' + s);
+      tab.setAttribute('aria-selected', String(s === step));
+      tab.classList.toggle('active', s === step);
+      panel.hidden = s !== step;
+    }
+    this.emit('step', step);
+    window.scrollTo(0, 0);
+  },
+
+  updateChrome() {
+    const has = this.docs.length > 0;
+    $('#tab-edit').disabled = !has;
+    $('#tab-output').disabled = !has;
+    const sw = $('#doc-switch');
+    const sel = /** @type {HTMLSelectElement} */ ($('#doc-select'));
+    sw.hidden = this.docs.length < 2;
+    sel.textContent = '';
+    this.docs.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = d.name;
+      o.selected = i === this.active;
+      sel.append(o);
+    });
+    this.updateProgress();
+  },
+
+  updateProgress() {
+    const doc = this.doc();
+    const box = $('#progress-total');
+    if (!doc) {
+      box.hidden = true;
+      return;
+    }
+    const p = progress(doc.items, doc.edits);
+    box.hidden = false;
+    const pct = p.total ? Math.round((p.filled / p.total) * 100) : 0;
+    $('#progress-fill').style.width = pct + '%';
+    $('#progress-text').textContent = `${fmt(p.filled)}/${fmt(p.total)} terisi · ${fmt(p.changed)} diubah`;
+    box.title = `${pct}% objek yang bisa diedit sudah punya deskripsi`;
+  },
+};
+
+// Autosave (debounced 500 ms) for every doc with a pending change.
+const saveNow = debounce(() => {
+  for (const d of app.docs) {
+    if (d.draft) continue; // don't overwrite an unrestored draft with an empty edit set
+    storage.saveDraft(d.hash, d.name, d.edits);
+  }
+}, 500);
+window.addEventListener('beforeunload', () => saveNow.flush());
+
+function boot() {
+  for (const s of ['input', 'edit', 'output']) {
+    $('#tab-' + s).addEventListener('click', () => app.goto(/** @type {any} */ (s)));
+  }
+  $('#doc-select').addEventListener('change', (e) => app.setActive(Number(/** @type {HTMLSelectElement} */ (e.target).value)));
+  initInput(app, $('#panel-input'));
+  initGrid(app, $('#panel-edit'));
+  initOutput(app, $('#panel-output'));
+  app.goto('input');
+  app.updateChrome();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+
+
+
+});
+__req("ui/app.js");
+})();
+</script>
+</body>
+</html>

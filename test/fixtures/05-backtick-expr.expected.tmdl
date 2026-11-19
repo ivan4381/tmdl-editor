@@ -1,0 +1,32 @@
+createOrReplace
+
+	table Sales
+
+		/// Fenced desc
+		measure 'Fenced' = ```
+table FakeShallow
+	column FakeCol
+/// bukan deskripsi
+		measure FakeMeasure = 1
+
+					RETURN 1
+			```
+			formatString: 0
+
+		/// deskripsi baru
+		/// dua baris
+		measure After = 1
+
+	expression 'Fn X' = ```
+	table InsideExpr
+		column C
+		```
+		lineageTag: e1
+
+	table Second
+		/// Kolom
+		column RealCol = ```
+					VAR s = "```"
+					RETURN s
+				```
+			dataType: string

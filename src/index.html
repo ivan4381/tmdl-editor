@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>TMDL Description Editor</title>
+<style>
+<!--INLINE_CSS-->
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">///</span>
+      <span class="brand-name">TMDL Description Editor</span>
+    </div>
+    <nav class="steps" role="tablist" aria-label="Langkah">
+      <button class="step" role="tab" data-step="input" id="tab-input" aria-controls="panel-input">1. Input</button>
+      <button class="step" role="tab" data-step="edit" id="tab-edit" aria-controls="panel-edit" disabled>2. Edit</button>
+      <button class="step" role="tab" data-step="output" id="tab-output" aria-controls="panel-output" disabled>3. Output</button>
+    </nav>
+    <div class="topbar-right">
+      <label class="doc-switch" id="doc-switch" hidden>
+        <span class="sr-only">Dokumen aktif</span>
+        <select id="doc-select"></select>
+      </label>
+      <div class="progress" id="progress-total" hidden>
+        <div class="progress-bar"><span id="progress-fill"></span></div>
+        <span class="progress-text" id="progress-text"></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="panel-input" role="tabpanel" aria-labelledby="tab-input"></section>
+    <section class="panel" id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" hidden></section>
+    <section class="panel" id="panel-output" role="tabpanel" aria-labelledby="tab-output" hidden></section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="modal"></dialog>
+</div>
+<script>
+<!--INLINE_JS-->
+</script>
+</body>
+</html>

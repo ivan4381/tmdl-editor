@@ -1,0 +1,29 @@
+createOrReplace
+
+	/// Tabel fakta penjualan harian
+	table Sales
+		lineageTag: 1111
+
+		/// Tanggal order
+		column OrderDate
+			dataType: dateTime
+			sourceColumn: OrderDate
+
+		/// Nilai transaksi
+		column Amount
+			dataType: decimal
+			sourceColumn: Amount
+
+		/// Total nilai penjualan
+		measure 'Total Sales' = SUM(Sales[Amount])
+			formatString: #,0
+			lineageTag: 2222
+
+		partition Sales = m
+			mode: import
+			source =
+					let
+					    Source = #table({"OrderDate","Amount"}, {})
+					in
+					    Source
+

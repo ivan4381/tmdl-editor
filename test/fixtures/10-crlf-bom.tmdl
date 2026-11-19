@@ -1,0 +1,25 @@
+﻿createOrReplace
+
+	table Sales
+		lineageTag: 1111
+
+		column OrderDate
+			dataType: dateTime
+			sourceColumn: OrderDate
+
+		column Amount
+			dataType: decimal
+			sourceColumn: Amount
+
+		measure 'Total Sales' = SUM(Sales[Amount])
+			formatString: #,0
+			lineageTag: 2222
+
+		partition Sales = m
+			mode: import
+			source =
+					let
+					    Source = #table({"OrderDate","Amount"}, {})
+					in
+					    Source
+

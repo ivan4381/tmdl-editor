@@ -1,0 +1,10 @@
+createOrReplace
+
+	table Penjualan
+		/// Nilai "rupiah" 💰 = ```
+		/// /// bukan komentar
+		/// 'kutip'' dan ``` lagi
+		column Nilai
+			dataType: decimal
+		/// Rata-rata harian ✓ — ditulis "apa adanya"
+		measure 'Rata-rata' = AVERAGE(Penjualan[Nilai])

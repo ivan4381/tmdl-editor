@@ -1,0 +1,26 @@
+createOrReplace
+
+	/// Dimensi tanggal
+	table Date
+		column Date
+			dataType: dateTime
+
+		hierarchy 'Date Hierarchy'
+			level Year
+				column: Year
+
+		column Year
+			dataType: int64
+
+	relationship 1a2b
+		fromColumn: Sales.Date
+		toColumn: Date.Date
+
+	table Sales
+		column Amount
+			dataType: decimal
+		measure Total = SUM(Sales[Amount])
+
+	table Product
+		column Name
+			dataType: string

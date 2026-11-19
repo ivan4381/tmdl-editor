@@ -1,0 +1,13 @@
+createOrReplace
+
+	table Sales
+		/// Margin kotor
+		column Margin =
+					VAR c = Sales[Cost]
+					RETURN Sales[Amount] - c
+			dataType: decimal
+			lineageTag: x
+
+		column 'Inline Calc' = Sales[Amount] * 2
+			dataType: decimal
+			isHidden: false

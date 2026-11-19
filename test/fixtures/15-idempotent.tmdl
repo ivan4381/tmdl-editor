@@ -1,0 +1,21 @@
+createOrReplace
+
+	/// deskripsi dengan spasi di akhir   
+	table Sales   
+		lineageTag: 1
+		
+		measure 'X' = ```
+					  campuran	tab dan spasi
+				```
+			formatString: 0
+
+		///
+		/// isi
+		column C
+			dataType: string
+			annotation A = {"k": "v"}
+
+	expression E = "x" meta [IsParameterQuery = true]
+
+	/// deskripsi queryGroup tetap utuh
+	queryGroup 'G & H'

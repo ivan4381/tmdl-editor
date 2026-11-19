@@ -1,0 +1,12 @@
+createOrReplace
+
+  /// Tabel dengan indentasi dua spasi
+  table Sales
+    lineageTag: 1
+
+    column Amount
+      dataType: decimal
+
+    measure Total =
+        SUM(Sales[Amount])
+      formatString: 0

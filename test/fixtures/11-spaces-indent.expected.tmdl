@@ -1,0 +1,14 @@
+createOrReplace
+
+  /// Diubah
+  table Sales
+    lineageTag: 1
+
+    column Amount
+      dataType: decimal
+
+    /// Total
+    /// baris dua
+    measure Total =
+        SUM(Sales[Amount])
+      formatString: 0

@@ -1,0 +1,20 @@
+createOrReplace
+
+	table Customers
+		column Name
+			dataType: string
+
+		partition Customers = m
+			mode: import
+			table FakeInPartition
+			source =
+					let
+					    // table Fake
+					    Source = Sql.Database("srv", "db"),
+					    column = 1,
+					    measure = 2,
+					    #"table X" = Source{[Schema="dbo",Item="Customers"]}[Data]
+					in
+					    #"table X"
+
+		annotation PBI_ResultType = Table

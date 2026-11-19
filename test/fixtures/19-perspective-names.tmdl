@@ -1,0 +1,16 @@
+createOrReplace
+
+	model Model
+		culture: en-US
+
+		table Sales
+			column Amount
+				dataType: decimal
+
+		perspective Sales
+			perspectiveTable Sales
+				perspectiveColumn Amount
+				perspectiveMeasure 'Total Sales'
+
+		role Reader
+			tablePermission Sales = TRUE()
