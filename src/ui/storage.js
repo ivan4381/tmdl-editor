@@ -92,7 +92,7 @@ function readKeys(store) {
     if (!raw) return null;
     const v = JSON.parse(raw);
     const str = (x) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
-    return { gemini: str(v.gemini), claude: str(v.claude) };
+    return { gemini: str(v.gemini), claude: str(v.claude), copilotku: str(v.copilotku) };
   } catch {
     return null;
   }
@@ -106,21 +106,25 @@ function store(kind) {
   }
 }
 
-/** @returns {{keys:{gemini?:string, claude?:string}, remember:boolean}} */
+/** @returns {{keys:{gemini?:string, claude?:string, copilotku?:string}, remember:boolean}} */
 export function loadAiKeys() {
   const local = readKeys(store('local'));
   if (local) return { keys: local, remember: true };
   return { keys: readKeys(store('session')) || {}, remember: false };
 }
 
-/** @param {{gemini?:string, claude?:string}} keys @param {boolean} remember */
+/** @param {{gemini?:string, claude?:string, copilotku?:string}} keys @param {boolean} remember */
 export function saveAiKeys(keys, remember) {
-  const clean = { gemini: (keys.gemini || '').trim() || undefined, claude: (keys.claude || '').trim() || undefined };
+  const clean = {
+    gemini: (keys.gemini || '').trim() || undefined,
+    claude: (keys.claude || '').trim() || undefined,
+    copilotku: (keys.copilotku || '').trim() || undefined,
+  };
   const target = store(remember ? 'local' : 'session');
   const other = store(remember ? 'session' : 'local');
   try {
     if (other) other.removeItem(AI_KEYS);
-    if (clean.gemini || clean.claude) target && target.setItem(AI_KEYS, JSON.stringify(clean));
+    if (clean.gemini || clean.claude || clean.copilotku) target && target.setItem(AI_KEYS, JSON.stringify(clean));
     else if (target) target.removeItem(AI_KEYS);
   } catch {
     /* storage blocked: keys stay in memory until the tab closes */

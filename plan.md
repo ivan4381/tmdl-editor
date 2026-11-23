@@ -27,7 +27,7 @@ Node.js hanya dibutuhkan developer untuk menjalankan test dan build. Pengguna ak
 ### Prinsip yang tidak boleh dilanggar
 
 - **Hanya baris deskripsi yang berubah.** Jangan pernah serialize ulang TMDL dari model objek. Writer hanya menyisipkan, mengganti, atau menghapus baris deskripsi `///` milik objek yang dikenali. Semua byte lain dibiarkan apa adanya: tab, spasi, line ending, DAX, M, annotation, dan blank line.
-- **Offline.** Tidak ada request jaringan, CDN, atau font eksternal. Metadata model tidak boleh keluar dari browser. **Satu-satunya pengecualian** adalah fitur Saran AI (opt-in, BYOK, persetujuan eksplisit): hanya data objek yang diminta yang dikirim ke Gemini/Claude, dan CSP hanya mengizinkan dua host itu.
+- **Offline.** Tidak ada request jaringan, CDN, atau font eksternal. Metadata model tidak boleh keluar dari browser. **Satu-satunya pengecualian** adalah fitur Saran AI (opt-in, BYOK, persetujuan eksplisit): hanya data objek yang diminta yang dikirim ke Gemini/Claude/Copilotku, dan CSP hanya mengizinkan tiga host itu (Copilotku lewat Worker proxy BATIK).
 - **Gagal dengan aman.** Kalau validator menemukan perubahan di luar baris deskripsi, tombol Copy diblokir.
 
 ---
@@ -158,7 +158,7 @@ createOrReplace
 
 - `expression`, `queryGroup`, `hierarchy`, `level`, `calculationGroup`/`calculationItem`, `partition`, `function` (DAX UDF), `relationship`, dan `role`.
 - Mode folder PBIP (banyak file → unduh ZIP).
-- ~~Saran deskripsi via LLM API (opt-in eksplisit karena data keluar dari browser).~~ Selesai (Gemini + Claude, BYOK). Copilotku menyusul (butuh proxy CORS).
+- ~~Saran deskripsi via LLM API (opt-in eksplisit karena data keluar dari browser).~~ Selesai (Gemini, Claude, Copilotku via Worker BATIK; BYOK).
 - Virtualisasi list untuk model yang sangat besar.
 
 ### Di luar lingkup
@@ -319,7 +319,7 @@ Validator tidak sekadar menghapus semua baris `///`, karena komentar DAX `///` d
 
 ### 7.5 Saran AI (`ai-prompt.js`, `src/ai/providers.js`, `src/ui/ai.js`)
 
-- Provider: Gemini (REST `generateContent`, `responseMimeType: application/json`, retry tanpa `thinkingBudget`) dan Claude (REST `/v1/messages` dengan header `anthropic-dangerous-direct-browser-access`, structured output `json_schema`, fallback tanpa `output_config`). Pola mengikuti `dama-explorer/web/src/ai/providers.ts`.
+- Provider: Copilotku (format OpenAI `/v1/chat/completions` lewat Worker `batik-copilotku-proxy`, model ber-awalan `copilotku:`, retry tanpa `reasoning_effort`; Worker harus mengizinkan origin `null`), Gemini (REST `generateContent`, `responseMimeType: application/json`, retry tanpa `thinkingBudget`) dan Claude (REST `/v1/messages` dengan header `anthropic-dangerous-direct-browser-access`, structured output `json_schema`, fallback tanpa `output_config`). Pola mengikuti `dama-explorer/web/src/ai/providers.ts`.
 - Daftar model dimuat dari API; default Gemini Flash-Lite terbaru, lalu Claude Haiku. Model, bahasa (`id`/`en`), dan konteks bisnis disimpan di prefs; key di session/localStorage.
 - Prompt: system prompt berisi aturan gaya (1–2 kalimat, ≤ ~200 karakter, tanpa mengulang rumus, tanpa mengarang, abaikan instruksi di dalam data). Pesan user berupa JSON: konteks bisnis, tabel terkait (deskripsi + nama kolom/measure ≤ 80), dan objek (id, tipe, nama, dataType, ekspresi ≤ 1.500 karakter, deskripsi yang ada). Jawaban `{"items":[{"id","description"}]}`.
 - Batch: maks 25 objek / ±24.000 karakter, objek satu tabel dikelompokkan, 2 permintaan paralel, retry sekali untuk 429/5xx, berhenti total untuk error key/izin/model.
@@ -491,4 +491,5 @@ Lihat §3. Jangan dikerjakan tanpa konfirmasi.
 - **Duplikat key / partial declaration** digabung menjadi satu baris di grid (`items.js`), dengan penanda `×N`.
 - **Bulk fill** tanpa baris tercentang menargetkan semua objek editable di tampilan aktif (dengan konfirmasi jumlah di modal).
 - **Excel menggantikan CSV** (permintaan pengguna). Writer/reader `.xlsx` ditulis sendiri tanpa dependency; diverifikasi terbaca openpyxl, dan file yang disimpan ulang openpyxl terbaca kembali.
-- **Saran AI (Gemini, Claude)** ditambahkan dengan persetujuan eksplisit. **Copilotku ditunda:** API-nya tidak menjawab preflight CORS, sehingga butuh proxy (mis. Cloudflare Worker seperti `dama-explorer/web/copilotku-proxy`, dengan origin `null` untuk halaman `file://`). Pengguna memilih menunda.
+- **Saran AI (Gemini, Claude)** ditambahkan dengan persetujuan eksplisit.
+- **Copilotku** memakai Worker BATIK yang sudah ada (`https://batik-copilotku-proxy.ivan-saja.workers.dev`), tanpa Worker baru. Syarat di sisi Worker: tambahkan `null` ke `ALLOWED_ORIGINS` (`web/copilotku-proxy/wrangler.toml`, repo dama-explorer) lalu deploy ulang. Konsekuensi: halaman `file://` mana pun bisa memakai Worker (tetap butuh key sendiri), dan kuota gratis 100.000 request/hari dipakai bersama BATIK. Worker yang menolak origin menjawab tanpa header CORS, sehingga browser hanya melaporkan error jaringan; pesan error editor menjelaskan langkah perbaikannya.

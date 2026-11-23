@@ -3,6 +3,8 @@
 // prompt building and parsing in ../core/ai-prompt.js.
 
 import { listModels, defaultModel, chatJson, providerOf, AiError } from '../ai/providers.js';
+
+const PROVIDER_NAME = { gemini: 'Gemini', claude: 'Claude', copilotku: 'Copilotku' };
 import { systemPrompt, buildUserMessage, parseSuggestions, makeBatches } from '../core/ai-prompt.js';
 import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
@@ -36,10 +38,10 @@ export function initAi(app, ctx) {
     if (ai.running) e.preventDefault();
   });
 
-  const hasKey = () => !!(ai.keys.gemini || ai.keys.claude);
+  const hasKey = () => !!(ai.keys.gemini || ai.keys.claude || ai.keys.copilotku);
   const modelLabel = () => {
     const m = ai.models.find((x) => x.id === ai.model);
-    return m ? `${m.label} (${m.provider === 'gemini' ? 'Gemini' : 'Claude'})` : ai.model;
+    return m ? `${m.label} (${PROVIDER_NAME[m.provider] || m.provider})` : ai.model;
   };
   const ready = () => ai.consent && hasKey() && !!ai.model && !!ai.keys[providerOf(ai.model)];
 
@@ -50,6 +52,7 @@ export function initAi(app, ctx) {
       consent.checked = ai.consent;
       const gKey = keyInput('ai-key-gemini', ai.keys.gemini, 'AIza…');
       const cKey = keyInput('ai-key-claude', ai.keys.claude, 'sk-ant-…');
+      const kKey = keyInput('ai-key-copilotku', ai.keys.copilotku, 'sk-…');
       const remember = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'ai-remember' }));
       remember.checked = ai.remember;
       const modelSel = /** @type {HTMLSelectElement} */ (h('select', { id: 'ai-model' }));
@@ -74,7 +77,7 @@ export function initAi(app, ctx) {
           modelSel.append(h('option', { value: '', text: 'Isi API key lalu klik "Muat daftar model"' }));
           return;
         }
-        for (const [prov, label] of [['gemini', 'Google Gemini'], ['claude', 'Anthropic Claude']]) {
+        for (const [prov, label] of [['gemini', 'Google Gemini'], ['claude', 'Anthropic Claude'], ['copilotku', 'Copilotku']]) {
           const list = models.filter((m) => m.provider === prov);
           if (!list.length) continue;
           modelSel.append(h('optgroup', { label }, list.map((m) => h('option', { value: m.id, text: m.label === m.id ? m.id : `${m.label} · ${m.id}` }))));
@@ -84,9 +87,9 @@ export function initAi(app, ctx) {
       fillModels(ai.models, ai.model);
 
       const load = async () => {
-        const keys = { gemini: gKey.value.trim(), claude: cKey.value.trim() };
-        if (!keys.gemini && !keys.claude) {
-          showErr('Isi minimal satu API key (Gemini atau Claude).');
+        const keys = { gemini: gKey.value.trim(), claude: cKey.value.trim(), copilotku: kKey.value.trim() };
+        if (!keys.gemini && !keys.claude && !keys.copilotku) {
+          showErr('Isi minimal satu API key (Gemini, Claude, atau Copilotku).');
           return null;
         }
         err.hidden = true;
@@ -123,13 +126,13 @@ export function initAi(app, ctx) {
           models = loaded;
         }
         const model = modelSel.value;
-        const keys = { gemini: gKey.value.trim() || undefined, claude: cKey.value.trim() || undefined };
+        const keys = { gemini: gKey.value.trim() || undefined, claude: cKey.value.trim() || undefined, copilotku: kKey.value.trim() || undefined };
         if (!model) {
           showErr('Pilih model.');
           return;
         }
         if (!keys[providerOf(model)]) {
-          showErr(`Model ${model} butuh API key ${providerOf(model) === 'gemini' ? 'Gemini' : 'Claude'}.`);
+          showErr(`Model ${model} butuh API key ${PROVIDER_NAME[providerOf(model)]}.`);
           return;
         }
         Object.assign(ai, { keys, remember: remember.checked, models, model, lang: /** @type {any} */ (lang.value), context: context.value, consent: true });
@@ -143,11 +146,12 @@ export function initAi(app, ctx) {
       return [
         h('div', { class: 'banner warn ai-notice' },
           h('strong', { text: 'Data akan dikirim ke penyedia AI. ' }),
-          'Saat Anda menekan ✨, nama tabel/kolom/measure, ekspresi DAX/M, deskripsi yang sudah ada, dan konteks bisnis untuk objek tersebut dikirim ke Google (Gemini) atau Anthropic (Claude) memakai API key Anda sendiri. ',
+          'Saat Anda menekan ✨, nama tabel/kolom/measure, ekspresi DAX/M, deskripsi yang sudah ada, dan konteks bisnis untuk objek tersebut dikirim ke Google (Gemini), Anthropic (Claude), atau Copilotku (lewat proxy Cloudflare Worker batik-copilotku-proxy yang hanya meneruskan, tanpa menyimpan) memakai API key Anda sendiri. ',
           'Tidak ada yang dikirim sebelum tombol ✨ ditekan, dan sisa script tidak pernah dikirim. Pastikan kebijakan data organisasi Anda mengizinkannya.'),
         h('label', { class: 'check', for: 'ai-consent' }, consent, ' Saya mengerti dan setuju data objek dikirim ke penyedia AI yang saya pilih'),
         h('label', { class: 'field' }, h('span', { text: 'Google Gemini API key' }), gKey),
         h('label', { class: 'field' }, h('span', { text: 'Anthropic Claude API key' }), cKey),
+        h('label', { class: 'field' }, h('span', { text: 'Copilotku API key (app key disarankan)' }), kKey),
         h('label', { class: 'check', for: 'ai-remember' }, remember, ' Ingat key di browser ini (tanpa centang: hilang saat tab ditutup)'),
         h('div', { class: 'field' }, h('span', { text: 'Model' }), h('div', { class: 'row-inline' }, modelSel, loadBtn), modelInfo),
         h('label', { class: 'field' }, h('span', { text: 'Bahasa deskripsi' }), lang),

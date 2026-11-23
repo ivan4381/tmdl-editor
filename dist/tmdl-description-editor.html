@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src https://generativelanguage.googleapis.com https://api.anthropic.com; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src https://generativelanguage.googleapis.com https://api.anthropic.com https://batik-copilotku-proxy.ivan-saja.workers.dev; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="no-referrer">
 <title>TMDL Description Editor</title>
 <style>
@@ -1259,7 +1259,7 @@ function readKeys(store) {
     if (!raw) return null;
     const v = JSON.parse(raw);
     const str = (x) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
-    return { gemini: str(v.gemini), claude: str(v.claude) };
+    return { gemini: str(v.gemini), claude: str(v.claude), copilotku: str(v.copilotku) };
   } catch {
     return null;
   }
@@ -1273,21 +1273,25 @@ function store(kind) {
   }
 }
 
-/** @returns {{keys:{gemini?:string, claude?:string}, remember:boolean}} */
+/** @returns {{keys:{gemini?:string, claude?:string, copilotku?:string}, remember:boolean}} */
 function loadAiKeys() {
   const local = readKeys(store('local'));
   if (local) return { keys: local, remember: true };
   return { keys: readKeys(store('session')) || {}, remember: false };
 }
 
-/** @param {{gemini?:string, claude?:string}} keys @param {boolean} remember */
+/** @param {{gemini?:string, claude?:string, copilotku?:string}} keys @param {boolean} remember */
 function saveAiKeys(keys, remember) {
-  const clean = { gemini: (keys.gemini || '').trim() || undefined, claude: (keys.claude || '').trim() || undefined };
+  const clean = {
+    gemini: (keys.gemini || '').trim() || undefined,
+    claude: (keys.claude || '').trim() || undefined,
+    copilotku: (keys.copilotku || '').trim() || undefined,
+  };
   const target = store(remember ? 'local' : 'session');
   const other = store(remember ? 'session' : 'local');
   try {
     if (other) other.removeItem(AI_KEYS);
-    if (clean.gemini || clean.claude) target && target.setItem(AI_KEYS, JSON.stringify(clean));
+    if (clean.gemini || clean.claude || clean.copilotku) target && target.setItem(AI_KEYS, JSON.stringify(clean));
     else if (target) target.removeItem(AI_KEYS);
   } catch {
     /* storage blocked: keys stay in memory until the tab closes */
@@ -2307,15 +2311,22 @@ exports.initTools = initTools; exports.baseName = baseName;
 
 __def("ai/providers.js", function (exports) {
 // BYOK AI clients called directly from the browser with the user's own key:
-// Google Gemini (REST) and Anthropic Claude (REST, browser-access header).
-// Same shape for both: chatJson() → {text, inputTokens, outputTokens}.
+// Google Gemini (REST), Anthropic Claude (REST, browser-access header) and
+// Copilotku (OpenAI format) through the BATIK Cloudflare Worker that only adds
+// CORS headers (dama-explorer/web/copilotku-proxy; its ALLOWED_ORIGINS must
+// include "null" for this file:// page).
+// Same shape for all: chatJson() → {text, inputTokens, outputTokens}.
 // Keys are never logged. Pattern follows dama-explorer/web/src/ai/providers.ts.
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const ANTHROPIC_BASE = 'https://api.anthropic.com/v1';
+/** Worker copilotku-proxy (shared with BATIK web); its origin is also in the page CSP connect-src. */
+const COPILOTKU_PROXY_URL = 'https://batik-copilotku-proxy.ivan-saja.workers.dev';
+/** Copilotku model ids carry this prefix so they never collide with Gemini/Claude ids. */
+const COPILOTKU_PREFIX = 'copilotku:';
 const REQUEST_TIMEOUT_MS = 180000;
 
-const LABEL = { gemini: 'Gemini', claude: 'Claude' };
+const LABEL = { gemini: 'Gemini', claude: 'Claude', copilotku: 'Copilotku' };
 const NET_OFFLINE = 'Tidak dapat terhubung ke server AI. Periksa koneksi internet Anda, lalu coba lagi.';
 const NET_TIMEOUT = 'Server AI tidak merespons (waktu tunggu habis). Coba lagi beberapa saat lagi.';
 
@@ -2327,14 +2338,19 @@ class AiError extends Error {
   }
 }
 
-/** @param {string} model */
-const providerOf = (model) => (/^gemini-/i.test(model) ? 'gemini' : 'claude');
+/** @param {string} model @returns {'gemini'|'claude'|'copilotku'} */
+const providerOf = (model) => (model.startsWith(COPILOTKU_PREFIX) ? 'copilotku' : /^gemini-/i.test(model) ? 'gemini' : 'claude');
+
+const COPILOTKU_UNREACHABLE = 'Tidak dapat terhubung ke Copilotku lewat proxy. Periksa koneksi internet, dan pastikan origin "null" '
+  + 'sudah ada di ALLOWED_ORIGINS Worker batik-copilotku-proxy (web/copilotku-proxy/wrangler.toml di repo dama-explorer), lalu deploy ulang.';
 
 function statusError(provider, status, detail) {
   const p = LABEL[provider];
   if (status === 401 || (provider === 'gemini' && status === 400 && /api key/i.test(detail))) {
     return new AiError('auth', `API key ${p} ditolak. Periksa key di Pengaturan AI.`);
   }
+  if (provider === 'copilotku' && status === 403 && /origin/i.test(detail)) return new AiError('forbidden', COPILOTKU_UNREACHABLE);
+  if (status === 402 && provider === 'copilotku') return new AiError('rate', 'Saldo Copilotku habis (402). Isi ulang saldo di console Copilotku, atau pilih model lain.');
   if (status === 403) {
     return new AiError('forbidden', provider === 'gemini'
       ? 'Key Gemini ditolak (403). Pastikan key mengizinkan Generative Language API dan tidak dibatasi HTTP referrer.'
@@ -2376,7 +2392,8 @@ async function request(provider, url, init, signal) {
   } catch {
     if (signal && signal.aborted) throw new AiError('cancelled', 'Dibatalkan.');
     if (tm.timedOut()) throw new AiError('timeout', NET_TIMEOUT);
-    throw new AiError('network', NET_OFFLINE);
+    // A Worker that rejects the origin answers without CORS headers, so the browser only reports a network error.
+    throw new AiError('network', provider === 'copilotku' ? COPILOTKU_UNREACHABLE : NET_OFFLINE);
   } finally {
     tm.done();
   }
@@ -2522,10 +2539,50 @@ async function claudeChat(key, model, system, user, opt) {
   };
 }
 
+// --------------------------------------------------------------- Copilotku
+
+const copilotkuHeaders = (key) => ({ 'content-type': 'application/json', authorization: `Bearer ${key}` });
+
+/** Copilotku model ids (without prefix), alphabetical. */
+async function listCopilotkuModels(key, signal) {
+  const data = await request('copilotku', `${COPILOTKU_PROXY_URL}/v1/models`, { method: 'GET', headers: copilotkuHeaders(key) }, signal);
+  const items = (Array.isArray(data) ? data : data && data.data) || [];
+  const ids = items.map((m) => (m && typeof m === 'object' ? m.id : m)).filter((id) => typeof id === 'string' && id);
+  return ids.sort((a, b) => a.localeCompare(b)).map((id) => ({ id, label: id }));
+}
+
+async function copilotkuChat(key, model, system, user, opt) {
+  const body = {
+    model: model.slice(COPILOTKU_PREFIX.length),
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    reasoning_effort: 'low',
+    ...(opt.maxTokens ? { max_tokens: opt.maxTokens } : {}),
+  };
+  const call = () => request('copilotku', `${COPILOTKU_PROXY_URL}/v1/chat/completions`, {
+    method: 'POST', headers: copilotkuHeaders(key), body: JSON.stringify(body),
+  }, opt.signal);
+  let data;
+  try {
+    data = await call();
+  } catch (e) {
+    // Non-reasoning models (e.g. GPT-4o) may reject reasoning_effort: retry once without.
+    if (!(e instanceof AiError && e.kind === 'other' && /\(400\)/.test(e.message))) throw e;
+    delete body.reasoning_effort;
+    data = await call();
+  }
+  const choice = (data && data.choices && data.choices[0]) || {};
+  const u = (data && data.usage) || {};
+  return {
+    text: (choice.message && choice.message.content) || '',
+    inputTokens: u.prompt_tokens || 0,
+    outputTokens: u.completion_tokens || 0,
+  };
+}
+
 // ------------------------------------------------------------------ common
 
 /**
- * @param {{gemini?:string, claude?:string}} keys
+ * @param {{gemini?:string, claude?:string, copilotku?:string}} keys
  * @param {string} model
  * @param {string} system
  * @param {string} user
@@ -2535,37 +2592,43 @@ function chatJson(keys, model, system, user, opt = {}) {
   const provider = providerOf(model);
   const key = keys[provider];
   if (!key) return Promise.reject(new AiError('auth', `Belum ada API key ${LABEL[provider]}. Isi di Pengaturan AI.`));
-  return provider === 'gemini' ? geminiChat(key, model, system, user, opt) : claudeChat(key, model, system, user, opt);
+  if (provider === 'gemini') return geminiChat(key, model, system, user, opt);
+  if (provider === 'copilotku') return copilotkuChat(key, model, system, user, opt);
+  return claudeChat(key, model, system, user, opt);
 }
 
 /**
  * Models from every provider that has a key.
- * @param {{gemini?:string, claude?:string}} keys
- * @returns {Promise<{models:{id:string, label:string, provider:'gemini'|'claude'}[], errors:string[]}>}
+ * @param {{gemini?:string, claude?:string, copilotku?:string}} keys
+ * @returns {Promise<{models:{id:string, label:string, provider:'gemini'|'claude'|'copilotku'}[], errors:string[]}>}
  */
 async function listModels(keys, signal) {
   const models = [];
   const errors = [];
-  const [g, c] = await Promise.allSettled([
+  const [g, c, k] = await Promise.allSettled([
     keys.gemini ? listGeminiModels(keys.gemini, signal) : Promise.resolve([]),
     keys.claude ? listClaudeModels(keys.claude, signal) : Promise.resolve([]),
+    keys.copilotku ? listCopilotkuModels(keys.copilotku, signal) : Promise.resolve([]),
   ]);
   if (g.status === 'fulfilled') models.push(...g.value.map((m) => ({ ...m, provider: 'gemini' })));
   else errors.push('Gemini: ' + g.reason.message);
   if (c.status === 'fulfilled') models.push(...c.value.map((m) => ({ ...m, provider: 'claude' })));
   else errors.push('Claude: ' + c.reason.message);
+  if (k.status === 'fulfilled') models.push(...k.value.map((m) => ({ id: COPILOTKU_PREFIX + m.id, label: m.label, provider: 'copilotku' })));
+  else errors.push('Copilotku: ' + k.reason.message);
   return { models, errors };
 }
 
-/** Cheapest sensible default: newest Gemini Flash-Lite, else newest Claude Haiku, else the first model. */
+/** Cheapest sensible default: newest Gemini Flash-Lite, else newest Claude Haiku, else a Copilotku Haiku, else the first model. */
 function defaultModel(models) {
   const lite = models.find((m) => m.provider === 'gemini' && m.id.endsWith('-flash-lite'));
   const haiku = models.find((m) => m.provider === 'claude' && /haiku/i.test(m.id));
-  const first = lite || haiku || models[0];
+  const kHaiku = models.find((m) => m.provider === 'copilotku' && /haiku/i.test(m.id));
+  const first = lite || haiku || kHaiku || models[0];
   return first ? first.id : null;
 }
 
-exports.GEMINI_BASE = GEMINI_BASE; exports.ANTHROPIC_BASE = ANTHROPIC_BASE; exports.REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS; exports.AiError = AiError; exports.providerOf = providerOf; exports.listGeminiModels = listGeminiModels; exports.listClaudeModels = listClaudeModels; exports.chatJson = chatJson; exports.listModels = listModels; exports.defaultModel = defaultModel;
+exports.GEMINI_BASE = GEMINI_BASE; exports.ANTHROPIC_BASE = ANTHROPIC_BASE; exports.COPILOTKU_PROXY_URL = COPILOTKU_PROXY_URL; exports.COPILOTKU_PREFIX = COPILOTKU_PREFIX; exports.REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS; exports.AiError = AiError; exports.providerOf = providerOf; exports.listGeminiModels = listGeminiModels; exports.listClaudeModels = listClaudeModels; exports.listCopilotkuModels = listCopilotkuModels; exports.chatJson = chatJson; exports.listModels = listModels; exports.defaultModel = defaultModel;
 });
 
 __def("core/ai-prompt.js", function (exports) {
@@ -2759,6 +2822,8 @@ __def("ui/ai.js", function (exports) {
 // prompt building and parsing in ../core/ai-prompt.js.
 
 const { listModels, defaultModel, chatJson, providerOf, AiError } = __req("ai/providers.js");
+
+const PROVIDER_NAME = { gemini: 'Gemini', claude: 'Claude', copilotku: 'Copilotku' };
 const { systemPrompt, buildUserMessage, parseSuggestions, makeBatches } = __req("core/ai-prompt.js");
 const { normalizeDescription } = __req("core/writer.js");
 const { truncate } = __req("core/text.js");
@@ -2792,10 +2857,10 @@ function initAi(app, ctx) {
     if (ai.running) e.preventDefault();
   });
 
-  const hasKey = () => !!(ai.keys.gemini || ai.keys.claude);
+  const hasKey = () => !!(ai.keys.gemini || ai.keys.claude || ai.keys.copilotku);
   const modelLabel = () => {
     const m = ai.models.find((x) => x.id === ai.model);
-    return m ? `${m.label} (${m.provider === 'gemini' ? 'Gemini' : 'Claude'})` : ai.model;
+    return m ? `${m.label} (${PROVIDER_NAME[m.provider] || m.provider})` : ai.model;
   };
   const ready = () => ai.consent && hasKey() && !!ai.model && !!ai.keys[providerOf(ai.model)];
 
@@ -2806,6 +2871,7 @@ function initAi(app, ctx) {
       consent.checked = ai.consent;
       const gKey = keyInput('ai-key-gemini', ai.keys.gemini, 'AIza…');
       const cKey = keyInput('ai-key-claude', ai.keys.claude, 'sk-ant-…');
+      const kKey = keyInput('ai-key-copilotku', ai.keys.copilotku, 'sk-…');
       const remember = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'ai-remember' }));
       remember.checked = ai.remember;
       const modelSel = /** @type {HTMLSelectElement} */ (h('select', { id: 'ai-model' }));
@@ -2830,7 +2896,7 @@ function initAi(app, ctx) {
           modelSel.append(h('option', { value: '', text: 'Isi API key lalu klik "Muat daftar model"' }));
           return;
         }
-        for (const [prov, label] of [['gemini', 'Google Gemini'], ['claude', 'Anthropic Claude']]) {
+        for (const [prov, label] of [['gemini', 'Google Gemini'], ['claude', 'Anthropic Claude'], ['copilotku', 'Copilotku']]) {
           const list = models.filter((m) => m.provider === prov);
           if (!list.length) continue;
           modelSel.append(h('optgroup', { label }, list.map((m) => h('option', { value: m.id, text: m.label === m.id ? m.id : `${m.label} · ${m.id}` }))));
@@ -2840,9 +2906,9 @@ function initAi(app, ctx) {
       fillModels(ai.models, ai.model);
 
       const load = async () => {
-        const keys = { gemini: gKey.value.trim(), claude: cKey.value.trim() };
-        if (!keys.gemini && !keys.claude) {
-          showErr('Isi minimal satu API key (Gemini atau Claude).');
+        const keys = { gemini: gKey.value.trim(), claude: cKey.value.trim(), copilotku: kKey.value.trim() };
+        if (!keys.gemini && !keys.claude && !keys.copilotku) {
+          showErr('Isi minimal satu API key (Gemini, Claude, atau Copilotku).');
           return null;
         }
         err.hidden = true;
@@ -2879,13 +2945,13 @@ function initAi(app, ctx) {
           models = loaded;
         }
         const model = modelSel.value;
-        const keys = { gemini: gKey.value.trim() || undefined, claude: cKey.value.trim() || undefined };
+        const keys = { gemini: gKey.value.trim() || undefined, claude: cKey.value.trim() || undefined, copilotku: kKey.value.trim() || undefined };
         if (!model) {
           showErr('Pilih model.');
           return;
         }
         if (!keys[providerOf(model)]) {
-          showErr(`Model ${model} butuh API key ${providerOf(model) === 'gemini' ? 'Gemini' : 'Claude'}.`);
+          showErr(`Model ${model} butuh API key ${PROVIDER_NAME[providerOf(model)]}.`);
           return;
         }
         Object.assign(ai, { keys, remember: remember.checked, models, model, lang: /** @type {any} */ (lang.value), context: context.value, consent: true });
@@ -2899,11 +2965,12 @@ function initAi(app, ctx) {
       return [
         h('div', { class: 'banner warn ai-notice' },
           h('strong', { text: 'Data akan dikirim ke penyedia AI. ' }),
-          'Saat Anda menekan ✨, nama tabel/kolom/measure, ekspresi DAX/M, deskripsi yang sudah ada, dan konteks bisnis untuk objek tersebut dikirim ke Google (Gemini) atau Anthropic (Claude) memakai API key Anda sendiri. ',
+          'Saat Anda menekan ✨, nama tabel/kolom/measure, ekspresi DAX/M, deskripsi yang sudah ada, dan konteks bisnis untuk objek tersebut dikirim ke Google (Gemini), Anthropic (Claude), atau Copilotku (lewat proxy Cloudflare Worker batik-copilotku-proxy yang hanya meneruskan, tanpa menyimpan) memakai API key Anda sendiri. ',
           'Tidak ada yang dikirim sebelum tombol ✨ ditekan, dan sisa script tidak pernah dikirim. Pastikan kebijakan data organisasi Anda mengizinkannya.'),
         h('label', { class: 'check', for: 'ai-consent' }, consent, ' Saya mengerti dan setuju data objek dikirim ke penyedia AI yang saya pilih'),
         h('label', { class: 'field' }, h('span', { text: 'Google Gemini API key' }), gKey),
         h('label', { class: 'field' }, h('span', { text: 'Anthropic Claude API key' }), cKey),
+        h('label', { class: 'field' }, h('span', { text: 'Copilotku API key (app key disarankan)' }), kKey),
         h('label', { class: 'check', for: 'ai-remember' }, remember, ' Ingat key di browser ini (tanpa centang: hilang saat tab ditutup)'),
         h('div', { class: 'field' }, h('span', { text: 'Model' }), h('div', { class: 'row-inline' }, modelSel, loadBtn), modelInfo),
         h('label', { class: 'field' }, h('span', { text: 'Bahasa deskripsi' }), lang),

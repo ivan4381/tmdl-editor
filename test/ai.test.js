@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { systemPrompt, makeBatches, buildUserMessage, parseSuggestions, extractJson, cleanSuggestion } from '../src/core/ai-prompt.js';
-import { chatJson, listModels, defaultModel, providerOf, AiError, GEMINI_BASE, ANTHROPIC_BASE } from '../src/ai/providers.js';
+import { chatJson, listModels, defaultModel, providerOf, AiError, GEMINI_BASE, ANTHROPIC_BASE, COPILOTKU_PROXY_URL, COPILOTKU_PREFIX } from '../src/ai/providers.js';
 import { parseTmdl } from '../src/core/parser.js';
 import { buildItems } from '../src/core/items.js';
 import { fixture } from './helpers.js';
@@ -72,6 +72,45 @@ function withFetch(handler, fn) {
 test('providerOf', () => {
   assert.equal(providerOf('gemini-3.5-flash-lite'), 'gemini');
   assert.equal(providerOf('claude-haiku-4-5'), 'claude');
+  assert.equal(providerOf('copilotku:Sonnet-5'), 'copilotku');
+  assert.equal(providerOf('copilotku:Gemini 3.6 Flash'), 'copilotku');
+});
+
+test('Copilotku chat: proxy URL, Bearer key, prefix stripped, system message, retry without reasoning_effort', () => withFetch((url, init, n) => {
+  const body = JSON.parse(init.body);
+  if (n === 1) {
+    assert.equal(body.reasoning_effort, 'low');
+    return { status: 400, body: { error: { message: 'Unsupported parameter: reasoning_effort' } } };
+  }
+  assert.equal(body.reasoning_effort, undefined);
+  return { body: { choices: [{ message: { content: '{"items":[{"id":"1","description":"x"}]}' } }], usage: { prompt_tokens: 7, completion_tokens: 2 } } };
+}, async (calls) => {
+  const r = await chatJson({ copilotku: 'sk-COPI' }, COPILOTKU_PREFIX + 'Sonnet-5', 'sys', 'user', { maxTokens: 500 });
+  assert.match(r.text, /"description":"x"/);
+  assert.equal(r.inputTokens, 7);
+  assert.equal(calls[0].url, `${COPILOTKU_PROXY_URL}/v1/chat/completions`);
+  assert.equal(calls[0].init.headers.authorization, 'Bearer sk-COPI');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.model, 'Sonnet-5');
+  assert.deepEqual(body.messages.map((m) => m.role), ['system', 'user']);
+  assert.equal(body.max_tokens, 500);
+}));
+
+test('Copilotku errors: 402 balance, 403 origin (proxy config), network failure explains the proxy', async () => {
+  await withFetch(() => ({ status: 402, body: { error: 'Saldo habis' } }), async () => {
+    await assert.rejects(chatJson({ copilotku: 'k' }, 'copilotku:GPT-4o', 's', 'u'), (e) => e.kind === 'rate' && /Saldo Copilotku/.test(e.message));
+  });
+  await withFetch(() => ({ status: 403, body: { error: 'Origin tidak diizinkan.' } }), async () => {
+    await assert.rejects(chatJson({ copilotku: 'k' }, 'copilotku:GPT-4o', 's', 'u'), (e) => e.kind === 'forbidden' && /ALLOWED_ORIGINS/.test(e.message));
+  });
+  const orig = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  try {
+    await assert.rejects(chatJson({ copilotku: 'k' }, 'copilotku:GPT-4o', 's', 'u'), (e) => e.kind === 'network' && /"null"/.test(e.message));
+    await assert.rejects(chatJson({ gemini: 'k' }, 'gemini-3-flash', 's', 'u'), (e) => e.kind === 'network' && !/null/.test(e.message));
+  } finally {
+    globalThis.fetch = orig;
+  }
 });
 
 test('Gemini chat: key header, JSON mime, thinking retry, text extraction', () => withFetch((url, init, n) => {
@@ -136,10 +175,14 @@ test('listModels: stable Gemini sorted newest first, Claude newest first, errors
     ] } };
   }
   if (url.startsWith(ANTHROPIC_BASE)) return { status: 500, body: {} };
+  if (url === `${COPILOTKU_PROXY_URL}/v1/models`) return { body: { data: [{ id: 'Sonnet-5' }, { id: 'Haiku-4.5' }, { id: 'GPT-4o' }] } };
   throw new Error('unexpected ' + url);
 }, async () => {
-  const { models, errors } = await listModels({ gemini: 'g', claude: 'c' });
-  assert.deepEqual(models.map((m) => m.id), ['gemini-3.6-flash-lite', 'gemini-3.6-pro', 'gemini-3.5-flash']);
+  const { models, errors } = await listModels({ gemini: 'g', claude: 'c', copilotku: 'k' });
+  assert.deepEqual(models.map((m) => m.id), ['gemini-3.6-flash-lite', 'gemini-3.6-pro', 'gemini-3.5-flash',
+    'copilotku:GPT-4o', 'copilotku:Haiku-4.5', 'copilotku:Sonnet-5']);
+  assert.equal(models[3].label, 'GPT-4o');
+  assert.equal(defaultModel(models.filter((m) => m.provider === 'copilotku')), 'copilotku:Haiku-4.5');
   assert.equal(errors.length, 1);
   assert.match(errors[0], /^Claude:/);
   assert.equal(defaultModel(models), 'gemini-3.6-flash-lite');
@@ -150,5 +193,5 @@ test('CSP connect-src allows exactly the provider hosts', () => {
   const html = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
   const csp = /content="([^"]*connect-src[^"]*)"/.exec(html)[1];
   const connect = /connect-src ([^;]+)/.exec(csp)[1].trim().split(/\s+/);
-  assert.deepEqual(connect.sort(), [new URL(ANTHROPIC_BASE).origin, new URL(GEMINI_BASE).origin].sort());
+  assert.deepEqual(connect.sort(), [new URL(ANTHROPIC_BASE).origin, new URL(GEMINI_BASE).origin, new URL(COPILOTKU_PROXY_URL).origin].sort());
 });

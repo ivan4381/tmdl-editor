@@ -31,12 +31,13 @@ Catatan:
 - `ref table X` (script parsial) ditampilkan read-only. Measure dan kolom di bawahnya tetap bisa diedit.
 - Teks yang **ditempel** ke textarea selalu dinormalkan browser ke line ending LF (aturan standar `<textarea>`).
   TMDL view menerima LF. File yang di-drag mempertahankan CRLF dan BOM persis.
-- Halaman memasang Content-Security-Policy yang hanya mengizinkan koneksi ke `generativelanguage.googleapis.com`
-  dan `api.anthropic.com`, dan itu pun hanya dipakai saat tombol ✨ ditekan. Selain itu tidak ada request jaringan.
+- Halaman memasang Content-Security-Policy yang hanya mengizinkan koneksi ke `generativelanguage.googleapis.com`,
+  `api.anthropic.com`, dan `batik-copilotku-proxy.ivan-saja.workers.dev`, dan itu pun hanya dipakai saat tombol ✨
+  ditekan. Selain itu tidak ada request jaringan.
 
 ### Saran AI (opsional, BYOK)
 
-- Buka **⚙ AI** di toolbar, isi API key **Google Gemini** dan/atau **Anthropic Claude** milik Anda sendiri, klik
+- Buka **⚙ AI** di toolbar, isi API key **Google Gemini**, **Anthropic Claude**, dan/atau **Copilotku** milik Anda sendiri, klik
   *Muat daftar model*, lalu pilih model, bahasa deskripsi, dan (opsional) konteks bisnis.
 - Key disimpan di `sessionStorage` (hilang saat tab ditutup), atau di `localStorage` jika *Ingat key* dicentang.
   Key hanya dikirim ke API provider-nya.
@@ -44,7 +45,11 @@ Catatan:
   deskripsi yang ada, nama kolom/measure lain di tabel yang sama, dan konteks bisnis. Script lengkap, partition/M,
   dan objek lain tidak dikirim. Fitur ini perlu persetujuan eksplisit di pengaturan.
 - Hasil AI ditandai **✨ saran AI** dan bergaris putus-putus di grid sampai Anda menyuntingnya. Validator tetap berlaku.
-- Copilotku belum didukung karena butuh proxy CORS (lihat `plan.md` §12).
+- **Copilotku** dipanggil lewat Cloudflare Worker yang sama dengan BATIK web (`batik-copilotku-proxy`), karena API
+  Copilotku tidak mendukung CORS. Worker hanya meneruskan `GET /v1/models` dan `POST /v1/chat/completions` dan tidak
+  menyimpan key. **Syarat:** `ALLOWED_ORIGINS` di `web/copilotku-proxy/wrangler.toml` (repo dama-explorer) harus
+  memuat `null` (origin halaman `file://`), lalu `npx wrangler deploy`. Tanpa itu, Copilotku gagal dengan pesan yang
+  menjelaskan langkah ini.
 
 ## Pengembangan
 
@@ -59,7 +64,7 @@ Struktur:
 
 ```
 src/core/   pure functions tanpa DOM: text, names, parser, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
-src/ai/     klien AI BYOK (Gemini, Claude) lewat fetch; dipanggil hanya dari src/ui/ai.js
+src/ai/     klien AI BYOK (Gemini, Claude, Copilotku via Worker) lewat fetch; dipanggil hanya dari src/ui/ai.js
 src/ui/     DOM: app (state), input-panel, grid, tools (Excel/bulk/replace), ai (pengaturan, ✨, isi massal), output-panel, storage, dom
 src/index.html, src/styles.css   template; build.mjs meng-inline CSS dan JS ke satu file
 test/       node:test + fixtures (TAB asli, lihat .editorconfig dan .gitattributes)
