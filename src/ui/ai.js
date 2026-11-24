@@ -80,7 +80,7 @@ export function initAi(app, ctx) {
         for (const [prov, label] of [['gemini', 'Google Gemini'], ['claude', 'Anthropic Claude'], ['copilotku', 'Copilotku']]) {
           const list = models.filter((m) => m.provider === prov);
           if (!list.length) continue;
-          modelSel.append(h('optgroup', { label }, list.map((m) => h('option', { value: m.id, text: m.label === m.id ? m.id : `${m.label} · ${m.id}` }))));
+          modelSel.append(h('optgroup', { label }, list.map((m) => h('option', { value: m.id, title: m.id, text: `${m.label} (${PROVIDER_NAME[m.provider] || m.provider})` }))));
         }
         modelSel.value = models.some((m) => m.id === selected) ? selected : defaultModel(models) || '';
       };
