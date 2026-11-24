@@ -390,9 +390,13 @@ pre.code-full { max-height: 360px; margin-top: 6px; padding: 8px; background: va
 .rf-checks .ok .rf-icon { color: var(--ok); font-weight: 700; }
 .rf-checks .bad { color: var(--warn); }
 .rf-checks .bad .rf-icon { font-weight: 700; }
-pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; max-height: 60vh; overflow: auto; white-space: pre; tab-size: 4; }
+pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; max-height: max(360px, calc(100vh - 230px)); overflow: auto; white-space: pre; tab-size: 4; }
 .rf-diff { max-height: 60vh; margin-top: 8px; }
 .rf-explain { margin: 6px 0 0; padding-left: 20px; }
+.rf-explain-box { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.rf-explain-box > summary { cursor: pointer; }
+.rf-explain-box[open] > summary { margin-bottom: 4px; }
+.rf-actions .rf-rerun { margin-left: auto; }
 .progress-bar.indeterminate { position: relative; overflow: hidden; }
 .progress-bar.indeterminate > span { position: absolute; width: 35%; animation: rf-slide 1.4s ease-in-out infinite; }
 @keyframes rf-slide { 0% { left: -35%; } 100% { left: 100%; } }
@@ -1179,6 +1183,8 @@ function readStepDescription(lines, stepLine, floor, commentLines) {
  * @property {string} inline       expression written on the declaration line ('' otherwise)
  * @property {string} queryGroup   Power Query group of an expression
  * @property {string} resultType   `PBI_ResultType` annotation of an expression
+ * @property {number} bodyStart    first body line in the script (-1 when inline)
+ * @property {number} bodyEnd      last body line in the script
  */
 
 const CODE_MAX = 20000;
@@ -1204,6 +1210,7 @@ function collectQueries(parsed) {
     const q = {
       key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '',
       inline: r.inline || '', queryGroup: (obj && obj.queryGroup) || '', resultType: (obj && obj.resultType) || '',
+      bodyStart: r.bodyStart, bodyEnd: r.bodyEnd,
     };
     if (r.bodyStart >= 0) {
       const body = parsed.lines.slice(r.bodyStart, r.bodyEnd + 1);
@@ -1235,13 +1242,33 @@ function collectQueries(parsed) {
   return out;
 }
 
+/**
+ * The query's M code as it will be after the current step-description edits
+ * (same rules as the writer), dedented for display.
+ * @param {string[]} lines script lines (ParseResult.lines)
+ * @param {MQuery} q
+ * @param {(step:MStep)=>string|null} changedDesc normalised new description, or null when unchanged
+ */
+function queryCodeWithDescriptions(lines, q, changedDesc) {
+  if (q.bodyStart < 0) return q.code;
+  const body = lines.slice(q.bodyStart, q.bodyEnd + 1);
+  for (const st of [...q.steps].reverse()) {
+    if (!st.commentable) continue;
+    const desc = changedDesc(st);
+    if (desc === null) continue;
+    body.splice(st.descStart - q.bodyStart, st.line - st.descStart, ...stepCommentLines(st.indent, desc));
+  }
+  const code = dedentLines(body).join('\n');
+  return code.length > CODE_MAX ? code.slice(0, CODE_MAX) + '\n…' : code;
+}
+
 /** Comment lines for a step description. */
 function stepCommentLines(indent, desc) {
   if (desc === '') return [];
   return desc.split('\n').map((l) => (l === '' ? indent + '//' : indent + '// ' + l));
 }
 
-exports.tokenizeM = tokenizeM; exports.stepDisplayName = stepDisplayName; exports.findSteps = findSteps; exports.readStepDescription = readStepDescription; exports.collectQueries = collectQueries; exports.stepCommentLines = stepCommentLines;
+exports.tokenizeM = tokenizeM; exports.stepDisplayName = stepDisplayName; exports.findSteps = findSteps; exports.readStepDescription = readStepDescription; exports.collectQueries = collectQueries; exports.queryCodeWithDescriptions = queryCodeWithDescriptions; exports.stepCommentLines = stepCommentLines;
 });
 
 __def("core/writer.js", function (exports) {
@@ -5678,7 +5705,7 @@ const { normalizeDescription } = __req("core/writer.js");
 const { truncate } = __req("core/text.js");
 const { lineDiff } = __req("core/diff.js");
 const { pqFileName } = __req("core/refactor.js");
-const { tokenizeM } = __req("core/mquery.js");
+const { tokenizeM, queryCodeWithDescriptions } = __req("core/mquery.js");
 const { QUERY_GROUPS, classifyQuery, tableInfo } = __req("core/classify.js");
 const { sideGroup } = __req("ui/side-groups.js");
 const { h, clear, autoGrow, fmt, toast, copyText, downloadText } = __req("ui/dom.js");
@@ -5744,6 +5771,8 @@ function initMPanel(app, root) {
     subtab: new Map(),
     /** collapsed sidebar categories ('partition' | 'expression'), remembered in prefs */
     collapsed: new Set(Array.isArray(app.prefs.mqCollapsed) ? app.prefs.mqCollapsed : []),
+    /** "Lihat kode M lengkap" open (kept while switching queries) */
+    codeOpen: false,
     /** query key → 'code' | 'alt' | 'diff' (view inside "Hasil refactor") */
     rview: new Map(),
   };
@@ -6009,8 +6038,12 @@ function initMPanel(app, root) {
     ui.rows.set(q.descKey, qCard);
 
     if (q.code) {
-      main.append(h('details', { class: 'code-details' }, h('summary', { text: 'Lihat kode M lengkap' }),
-        setCode(h('pre', { class: 'expr expanded code-full' }), q.code.split('\n').map((l) => truncate(l, LINE_MAX)).join('\n'))));
+      const details = h('details', { class: 'code-details', open: ui.codeOpen },
+        h('summary', { text: 'Lihat kode M lengkap', title: 'Termasuk deskripsi step yang sedang diisi, persis seperti yang akan ditulis ke script' }),
+        h('pre', { class: 'expr expanded code-full', id: 'mq-code-full' }));
+      details.addEventListener('toggle', () => { ui.codeOpen = details.open; });
+      main.append(details);
+      refreshFullCode(q);
     }
 
     if (q.steps.length) {
@@ -6060,15 +6093,45 @@ function initMPanel(app, root) {
       ' · ', h('strong', { text: 'Step: ' }), `${fmt(st.stepsBefore)} → ${fmt(st.stepsAfter)}`);
   }
 
-  function codeActions(q, code, suffix) {
+  /** Full M code of the current query including the current step descriptions. */
+  function refreshFullCode(q) {
+    const pre = main.querySelector('#mq-code-full');
+    if (!pre) return;
+    const code = queryCodeWithDescriptions(doc().parsed.lines, q, (st) => {
+      const e = app.entry(st.key);
+      if (!e) return null;
+      const cur = normalizeDescription(app.desc(e));
+      return cur === normalizeDescription(st.originalDesc) ? null : cur;
+    });
+    setCode(pre, code.split('\n').map((l) => truncate(l, LINE_MAX)).join('\n'));
+  }
+
+  function codeActions(q, code, suffix, rerun) {
     const crlf = code.replace(/\r\n?/g, '\n').split('\n').join('\r\n') + '\r\n';
-    return h('div', { class: 'actions' },
+    return h('div', { class: 'actions rf-actions' },
       h('button', { type: 'button', class: 'btn primary small', id: 'rf-copy' + suffix, text: 'Copy', onclick: async () => {
         const ok = await copyText(code);
         toast(ok ? 'Kode disalin. Tempel di Advanced Editor Power Query (ganti seluruh isi), lalu Done.' : 'Gagal menyalin. Pakai Download .pq.', ok ? 'ok' : 'error');
       } }),
       h('button', { type: 'button', class: 'btn small', id: 'rf-download' + suffix, text: 'Download .pq',
-        onclick: () => downloadText(pqFileName(label(q), suffix ? '.alternatif' : '.refactor'), crlf) }));
+        onclick: () => downloadText(pqFileName(label(q), suffix ? '.alternatif' : '.refactor'), crlf) }),
+      rerunButton(rerun));
+  }
+
+  function rerunButton(rerun) {
+    return h('button', { type: 'button', class: 'btn small rf-rerun', id: 'rf-rerun', text: '🛠 Refactor ulang',
+      title: 'Jalankan refactor lagi untuk query ini (menimpa hasil di atas)', disabled: !app.ai.isReady(), onclick: rerun });
+  }
+
+  /** Collapsible "Penjelasan perubahan" (closed by default; open state remembered). */
+  function explanation(r) {
+    if (!r.explanation) return null;
+    const points = r.explanation.split('\n').map((l) => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+    const det = h('details', { class: 'rf-explain-box', id: 'rf-explain', open: !!app.prefs.rfExplainOpen },
+      h('summary', null, h('strong', { text: 'Penjelasan perubahan' }), h('span', { class: 'muted', text: ` (${fmt(points.length)} poin)` })),
+      h('ul', { class: 'rf-explain' }, points.map((t) => h('li', { text: t }))));
+    det.addEventListener('toggle', () => app.savePrefs({ rfExplainOpen: det.open }));
+    return det;
   }
 
   function diffView(original, changed) {
@@ -6097,8 +6160,8 @@ function initMPanel(app, root) {
     main.append(seg);
     const card = h('div', { class: 'card rf-card' });
     if (view === 'alt' && r.alternative) {
-      card.append(statLine(r.altAnalysis.stats), checkList(r.altAnalysis),
-        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.alternative), codeActions(q, r.alternative, '-alt'));
+      card.append(statLine(r.altAnalysis.stats), checkList(r.altAnalysis), explanation(r) || '',
+        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.alternative), codeActions(q, r.alternative, '-alt', rerun));
     } else if (view === 'diff') {
       const target = ui.rview.get(q.key + '|diff') === 'alt' && r.alternative ? 'alt' : 'code';
       const pick = /** @type {HTMLSelectElement} */ (h('select', { id: 'rf-diff-target' },
@@ -6107,19 +6170,12 @@ function initMPanel(app, root) {
       pick.value = target;
       pick.addEventListener('change', () => { ui.rview.set(q.key + '|diff', pick.value); renderMain(); });
       card.append(h('div', { class: 'row-inline' }, pick, h('span', { class: 'muted small', text: '− baris kode asli · + baris hasil' })),
-        diffView(q.code, target === 'alt' ? r.alternative : r.code));
+        diffView(q.code, target === 'alt' ? r.alternative : r.code), h('div', { class: 'actions rf-actions' }, rerunButton(rerun)));
     } else {
-      card.append(statLine(r.analysis.stats), checkList(r.analysis),
-        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.code), codeActions(q, r.code, ''));
+      card.append(statLine(r.analysis.stats), checkList(r.analysis), explanation(r) || '',
+        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.code), codeActions(q, r.code, '', rerun));
     }
     main.append(card);
-    if (r.explanation) {
-      const points = r.explanation.split('\n').map((l) => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean);
-      main.append(h('div', { class: 'card' }, h('strong', { text: 'Penjelasan perubahan' }),
-        h('ul', { class: 'rf-explain' }, points.map((t) => h('li', { text: t })))));
-    }
-    main.append(h('div', { class: 'actions' },
-      h('button', { type: 'button', class: 'btn small', id: 'rf-rerun', text: '🛠 Refactor ulang', disabled: !app.ai.isReady(), onclick: rerun })));
   }
 
   function refreshRow(key) {
@@ -6178,6 +6234,8 @@ function initMPanel(app, root) {
   app.on('edit', (key) => {
     if (!visible()) return;
     refreshRow(key);
+    const cq = queryOf(ui.current);
+    if (cq && key.startsWith('step|' + cq.key + '|')) refreshFullCode(cq);
     // A table description edited here is also the query description of its partitions.
     for (const q of doc().queries) if (q.descKey === key && q.key !== ui.current) updateSideItem(q);
     updateCounts();

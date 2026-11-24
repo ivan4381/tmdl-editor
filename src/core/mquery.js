@@ -211,6 +211,8 @@ export function readStepDescription(lines, stepLine, floor, commentLines) {
  * @property {string} inline       expression written on the declaration line ('' otherwise)
  * @property {string} queryGroup   Power Query group of an expression
  * @property {string} resultType   `PBI_ResultType` annotation of an expression
+ * @property {number} bodyStart    first body line in the script (-1 when inline)
+ * @property {number} bodyEnd      last body line in the script
  */
 
 const CODE_MAX = 20000;
@@ -236,6 +238,7 @@ export function collectQueries(parsed) {
     const q = {
       key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '',
       inline: r.inline || '', queryGroup: (obj && obj.queryGroup) || '', resultType: (obj && obj.resultType) || '',
+      bodyStart: r.bodyStart, bodyEnd: r.bodyEnd,
     };
     if (r.bodyStart >= 0) {
       const body = parsed.lines.slice(r.bodyStart, r.bodyEnd + 1);
@@ -265,6 +268,26 @@ export function collectQueries(parsed) {
     out.push(q);
   }
   return out;
+}
+
+/**
+ * The query's M code as it will be after the current step-description edits
+ * (same rules as the writer), dedented for display.
+ * @param {string[]} lines script lines (ParseResult.lines)
+ * @param {MQuery} q
+ * @param {(step:MStep)=>string|null} changedDesc normalised new description, or null when unchanged
+ */
+export function queryCodeWithDescriptions(lines, q, changedDesc) {
+  if (q.bodyStart < 0) return q.code;
+  const body = lines.slice(q.bodyStart, q.bodyEnd + 1);
+  for (const st of [...q.steps].reverse()) {
+    if (!st.commentable) continue;
+    const desc = changedDesc(st);
+    if (desc === null) continue;
+    body.splice(st.descStart - q.bodyStart, st.line - st.descStart, ...stepCommentLines(st.indent, desc));
+  }
+  const code = dedentLines(body).join('\n');
+  return code.length > CODE_MAX ? code.slice(0, CODE_MAX) + '\n…' : code;
 }
 
 /** Comment lines for a step description. */

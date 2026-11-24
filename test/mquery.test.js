@@ -128,3 +128,28 @@ test('idempotent with step edits equal to the original descriptions (all fixture
     assert.equal(applyDescriptions(parsed, same), input, n);
   }
 });
+
+import { queryCodeWithDescriptions } from '../src/core/mquery.js';
+
+test('queryCodeWithDescriptions matches what the writer produces', () => {
+  const input = fixture('20-mquery.tmdl');
+  const parsed = parseTmdl(input);
+  const qs = collectQueries(parsed);
+  const edits = new Map([
+    ['step|partition|sales|sales|Source', 'Sumber data penjualan dari SQL Server'],
+    ['step|partition|sales|sales|#"Filtered ""Rows"""', 'Menyaring baris valid\n\nBaris ketiga'],
+    ['step|partition|sales|sales|Multi', 'Menambah kolom teks'],
+    ['step|expression||staging|Sheet', 'Ambil sheet pertama'],
+  ]);
+  const after = collectQueries(parseTmdl(applyDescriptions(parsed, edits)));
+  for (let i = 0; i < qs.length; i++) {
+    const shown = queryCodeWithDescriptions(parsed.lines, qs[i], (st) => {
+      if (!edits.has(st.key)) return null;
+      const d = normalizeDescription(edits.get(st.key));
+      return d === normalizeDescription(st.originalDesc) ? null : d;
+    });
+    assert.equal(shown, after[i].code, qs[i].key);
+  }
+  // No edits → original code.
+  assert.equal(queryCodeWithDescriptions(parsed.lines, qs[0], () => null), qs[0].code);
+});

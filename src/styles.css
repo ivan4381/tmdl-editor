@@ -381,9 +381,13 @@ pre.code-full { max-height: 360px; margin-top: 6px; padding: 8px; background: va
 .rf-checks .ok .rf-icon { color: var(--ok); font-weight: 700; }
 .rf-checks .bad { color: var(--warn); }
 .rf-checks .bad .rf-icon { font-weight: 700; }
-pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; max-height: 60vh; overflow: auto; white-space: pre; tab-size: 4; }
+pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; max-height: max(360px, calc(100vh - 230px)); overflow: auto; white-space: pre; tab-size: 4; }
 .rf-diff { max-height: 60vh; margin-top: 8px; }
 .rf-explain { margin: 6px 0 0; padding-left: 20px; }
+.rf-explain-box { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.rf-explain-box > summary { cursor: pointer; }
+.rf-explain-box[open] > summary { margin-bottom: 4px; }
+.rf-actions .rf-rerun { margin-left: auto; }
 .progress-bar.indeterminate { position: relative; overflow: hidden; }
 .progress-bar.indeterminate > span { position: absolute; width: 35%; animation: rf-slide 1.4s ease-in-out infinite; }
 @keyframes rf-slide { 0% { left: -35%; } 100% { left: 100%; } }
