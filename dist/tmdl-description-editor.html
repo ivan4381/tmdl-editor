@@ -351,7 +351,18 @@ dialog::backdrop { background: rgba(10, 14, 22, 0.45); }
 .mode-btn:hover { color: var(--text); }
 .mode-btn.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .mode-count { font-weight: 400; color: var(--muted); font-size: 12px; }
-.side-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 10px 8px 4px; }
+.side-group {
+  display: flex; align-items: center; gap: 6px; width: 100%; margin: 8px 0 4px; padding: 6px 8px;
+  border: none; border-radius: 6px; cursor: pointer; text-align: left;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); background: var(--accent-soft);
+}
+.side-group:hover { filter: brightness(0.97); }
+.side-group-title { flex: 1; }
+.side-group-count { font-weight: 600; letter-spacing: 0; }
+.side-chevron { display: inline-block; width: 10px; transition: transform 0.15s ease; }
+.side-group[aria-expanded="true"] .side-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .side-chevron { transition: none; } }
 .q-desc { padding: 12px; }
 .q-desc-head { margin-bottom: 6px; }
 .code-details { margin: 0 0 12px; }
@@ -5528,6 +5539,8 @@ function initMPanel(app, root) {
     sideItems: new Map(),
     /** query key → 'desc' | 'refactor' */
     subtab: new Map(),
+    /** collapsed sidebar categories ('partition' | 'expression'), remembered in prefs */
+    collapsed: new Set(Array.isArray(app.prefs.mqCollapsed) ? app.prefs.mqCollapsed : []),
     /** query key → 'code' | 'alt' | 'diff' (view inside "Hasil refactor") */
     rview: new Map(),
   };
@@ -5579,7 +5592,21 @@ function initMPanel(app, root) {
         return s.filled < s.total;
       });
       if (!qs.length) continue;
-      sideList.append(h('div', { class: 'side-group', text: title }));
+      const open = !ui.collapsed.has(kind);
+      const items = h('div', { class: 'side-group-items', id: 'mq-group-' + kind, hidden: !open });
+      const head = h('button', {
+        type: 'button', class: 'side-group', dataset: { group: kind }, 'aria-expanded': String(open), 'aria-controls': 'mq-group-' + kind,
+      }, h('span', { class: 'side-chevron', 'aria-hidden': 'true', text: '▸' }), h('span', { class: 'side-group-title', text: title }),
+      h('span', { class: 'side-group-count', text: `(${fmt(qs.length)})` }));
+      head.addEventListener('click', () => {
+        const nowOpen = items.hidden; // toggle without rebuilding the list (keeps the scroll position)
+        items.hidden = !nowOpen;
+        head.setAttribute('aria-expanded', String(nowOpen));
+        if (nowOpen) ui.collapsed.delete(kind);
+        else ui.collapsed.add(kind);
+        app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+      });
+      sideList.append(head, items);
       for (const q of qs) {
         const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { query: q.key }, title: label(q) },
           h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
@@ -5593,7 +5620,7 @@ function initMPanel(app, root) {
         });
         ui.sideItems.set(q.key, el);
         updateSideItem(q);
-        sideList.append(el);
+        items.append(el);
       }
     }
     if (!sideList.childElementCount) {

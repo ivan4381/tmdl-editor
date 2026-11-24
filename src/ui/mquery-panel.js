@@ -67,6 +67,8 @@ export function initMPanel(app, root) {
     sideItems: new Map(),
     /** query key → 'desc' | 'refactor' */
     subtab: new Map(),
+    /** collapsed sidebar categories ('partition' | 'expression'), remembered in prefs */
+    collapsed: new Set(Array.isArray(app.prefs.mqCollapsed) ? app.prefs.mqCollapsed : []),
     /** query key → 'code' | 'alt' | 'diff' (view inside "Hasil refactor") */
     rview: new Map(),
   };
@@ -118,7 +120,21 @@ export function initMPanel(app, root) {
         return s.filled < s.total;
       });
       if (!qs.length) continue;
-      sideList.append(h('div', { class: 'side-group', text: title }));
+      const open = !ui.collapsed.has(kind);
+      const items = h('div', { class: 'side-group-items', id: 'mq-group-' + kind, hidden: !open });
+      const head = h('button', {
+        type: 'button', class: 'side-group', dataset: { group: kind }, 'aria-expanded': String(open), 'aria-controls': 'mq-group-' + kind,
+      }, h('span', { class: 'side-chevron', 'aria-hidden': 'true', text: '▸' }), h('span', { class: 'side-group-title', text: title }),
+      h('span', { class: 'side-group-count', text: `(${fmt(qs.length)})` }));
+      head.addEventListener('click', () => {
+        const nowOpen = items.hidden; // toggle without rebuilding the list (keeps the scroll position)
+        items.hidden = !nowOpen;
+        head.setAttribute('aria-expanded', String(nowOpen));
+        if (nowOpen) ui.collapsed.delete(kind);
+        else ui.collapsed.add(kind);
+        app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+      });
+      sideList.append(head, items);
       for (const q of qs) {
         const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { query: q.key }, title: label(q) },
           h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
@@ -132,7 +148,7 @@ export function initMPanel(app, root) {
         });
         ui.sideItems.set(q.key, el);
         updateSideItem(q);
-        sideList.append(el);
+        items.append(el);
       }
     }
     if (!sideList.childElementCount) {
