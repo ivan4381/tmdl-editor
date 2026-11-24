@@ -141,8 +141,9 @@ async function geminiChat(key, model, system, user, opt) {
   }, opt.signal);
   let data;
   try {
-    data = await call(true);
+    data = await call(!opt.allowThinking);
   } catch (e) {
+    if (opt.allowThinking) throw e;
     // Models that cannot turn thinking off reject budget 0 (Gemini 3 with a generic 400): retry without.
     if (!(e instanceof AiError && e.kind === 'other' && /think|\(400\)/i.test(e.message))) throw e;
     data = await call(false);
@@ -185,24 +186,32 @@ export async function listClaudeModels(key, signal) {
   return out.sort((a, b) => String(b.created).localeCompare(String(a.created))).map(({ id, label }) => ({ id, label }));
 }
 
-const SUGGESTION_SCHEMA = {
-  type: 'json_schema',
-  schema: {
-    type: 'object',
-    properties: {
-      items: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: { id: { type: 'string' }, description: { type: 'string' } },
-          required: ['id', 'description'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['items'],
-    additionalProperties: false,
+const strObj = (props) => ({
+  type: 'object',
+  properties: Object.fromEntries(props.map((k) => [k, { type: 'string' }])),
+  required: props,
+  additionalProperties: false,
+});
+
+/** JSON schemas for Claude structured output, one per feature (Gemini/Copilotku rely on the prompt). */
+export const SCHEMAS = {
+  /** object descriptions: {"items":[{id, description}]} */
+  descriptions: {
+    type: 'json_schema',
+    schema: { type: 'object', properties: { items: { type: 'array', items: strObj(['id', 'description']) } }, required: ['items'], additionalProperties: false },
   },
+  /** Power Query step descriptions: {"queryDescription", "steps":[{id, description}]} */
+  mquery: {
+    type: 'json_schema',
+    schema: {
+      type: 'object',
+      properties: { queryDescription: { type: 'string' }, steps: { type: 'array', items: strObj(['id', 'description']) } },
+      required: ['queryDescription', 'steps'],
+      additionalProperties: false,
+    },
+  },
+  /** M refactor: {"refactoredCode", "alternativeCode", "explanation"} */
+  refactor: { type: 'json_schema', schema: strObj(['refactoredCode', 'alternativeCode', 'explanation']) },
 };
 
 async function claudeChat(key, model, system, user, opt) {
@@ -212,7 +221,7 @@ async function claudeChat(key, model, system, user, opt) {
   }, opt.signal);
   let res;
   try {
-    res = await call({ ...base, output_config: { effort: 'low', format: SUGGESTION_SCHEMA } });
+    res = await call({ ...base, output_config: { effort: opt.effort || 'low', ...(opt.schema ? { format: opt.schema } : {}) } });
   } catch (e) {
     // Older models reject effort / structured output: retry plain (the prompt already asks for JSON).
     if (!(e instanceof AiError && e.kind === 'other' && /effort|output_config|format|schema|\(400\)/i.test(e.message))) throw e;
@@ -243,7 +252,7 @@ async function copilotkuChat(key, model, system, user, opt) {
   const body = {
     model: model.slice(COPILOTKU_PREFIX.length),
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    reasoning_effort: 'low',
+    reasoning_effort: opt.effort || 'low',
     ...(opt.maxTokens ? { max_tokens: opt.maxTokens } : {}),
   };
   const call = () => request('copilotku', `${COPILOTKU_PROXY_URL}/v1/chat/completions`, {
@@ -274,7 +283,9 @@ async function copilotkuChat(key, model, system, user, opt) {
  * @param {string} model
  * @param {string} system
  * @param {string} user
- * @param {{signal?:AbortSignal, maxTokens?:number}} [opt]
+ * @param {{signal?:AbortSignal, maxTokens?:number, schema?:object, effort?:'low'|'medium'|'high', allowThinking?:boolean}} [opt]
+ *   schema: Claude structured-output format (see SCHEMAS); effort: Claude/Copilotku reasoning effort (default low);
+ *   allowThinking: let Gemini think (default: thinking off for short JSON answers)
  */
 export function chatJson(keys, model, system, user, opt = {}) {
   const provider = providerOf(model);

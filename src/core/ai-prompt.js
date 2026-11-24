@@ -202,16 +202,18 @@ export function sensitiveKind(text) {
  * Replace sensitive string literals (URLs, emails, paths, server names) in M code
  * with stable placeholders such as "<URL_1>". The same literal gets the same placeholder.
  * @param {string} code
- * @returns {{code:string, count:number}}
+ * @returns {{code:string, count:number, restore:Map<string,string>}} restore: `"<URL_1>"` → original literal (with quotes)
  */
 export function maskSensitive(code) {
   const map = new Map();
+  const restore = new Map();
   const counters = {};
-  const placeholder = (kind, value) => {
+  const placeholder = (kind, value, original) => {
     const k = kind + '\u0000' + value;
     if (!map.has(k)) {
       counters[kind] = (counters[kind] || 0) + 1;
       map.set(k, `<${kind}_${counters[kind]}>`);
+      restore.set('"' + map.get(k) + '"', original);
     }
     return map.get(k);
   };
@@ -225,21 +227,21 @@ export function maskSensitive(code) {
     // Unparseable code: mask quoted literals on a best-effort basis.
     const out = code.replace(/"((?:[^"\n]|"")*)"/g, (m, inner) => {
       const kind = sensitiveKind(inner.replace(/""/g, '"'));
-      return kind ? '"' + placeholder(kind, inner) + '"' : m;
+      return kind ? '"' + placeholder(kind, inner, m) + '"' : m;
     });
-    return { code: out, count: map.size };
+    return { code: out, count: map.size, restore };
   }
   let out = '';
   for (const t of tokens) {
     if (t.t === 'str') {
       const inner = t.v.slice(1, -1).replace(/""/g, '"');
       const kind = sensitiveKind(inner);
-      out += kind ? '"' + placeholder(kind, inner) + '"' : t.v;
+      out += kind ? '"' + placeholder(kind, inner, t.v) + '"' : t.v;
     } else {
       out += t.v;
     }
   }
-  return { code: out, count: map.size };
+  return { code: out, count: map.size, restore };
 }
 
 /** @param {'id'|'en'} lang */

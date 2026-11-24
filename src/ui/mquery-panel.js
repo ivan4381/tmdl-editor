@@ -3,7 +3,9 @@
 
 import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
-import { h, clear, autoGrow, fmt } from './dom.js';
+import { lineDiff } from '../core/diff.js';
+import { pqFileName } from '../core/refactor.js';
+import { h, clear, autoGrow, fmt, toast, copyText, downloadText } from './dom.js';
 
 const LINE_MAX = 300;
 const CODE_PREVIEW_LINES = 4;
@@ -21,6 +23,10 @@ export function initMPanel(app, root) {
     rows: new Map(),
     /** @type {Map<string, HTMLElement>} */
     sideItems: new Map(),
+    /** query key → 'desc' | 'refactor' */
+    subtab: new Map(),
+    /** query key → 'code' | 'alt' | 'diff' (view inside "Hasil refactor") */
+    rview: new Map(),
   };
 
   const sideList = h('div', { class: 'side-list', role: 'listbox', 'aria-label': 'Query' });
@@ -73,7 +79,8 @@ export function initMPanel(app, root) {
       sideList.append(h('div', { class: 'side-group', text: title }));
       for (const q of qs) {
         const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { query: q.key }, title: label(q) },
-          h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null),
+          h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
+            d.refactors && d.refactors.has(q.key) ? h('span', { class: 'rf-badge', title: 'Sudah ada hasil refactor', text: ' 🛠' }) : null),
           h('span', { class: 'side-count' }),
           h('span', { class: 'side-bar' }, h('span')));
         el.addEventListener('click', () => {
@@ -195,18 +202,42 @@ export function initMPanel(app, root) {
       markActive();
     }
     const ai = app.ai;
+    const aiReady = ai.isReady();
+    const canRefactor = aiReady && q.code !== '' && q.editable;
+    const refactorTitle = !aiReady ? 'Atur API key dan model AI di ⚙ AI terlebih dahulu'
+      : q.code === '' ? 'Query satu baris tidak perlu di-refactor'
+        : !q.editable ? 'Query ref tidak bisa di-refactor dari script parsial ini' : 'Tulis ulang kode M query ini dengan AI (hasil terpisah, tidak mengubah script)';
+    const result = d.refactors && d.refactors.get(q.key);
+    const startRefactor = () => ai.openRefactor(q, () => {
+      ui.subtab.set(q.key, 'refactor');
+      ui.rview.set(q.key, 'code');
+      renderSidebar();
+      renderMain();
+    });
     const toolbar = h('div', { class: 'tools' },
-      h('span', { class: 'muted', text: 'Deskripsi step ditulis sebagai komentar // di atas step dan tampil di Applied Steps Power Query.' }),
+      h('span', { class: 'muted', text: 'Komentar // di atas step = deskripsi step di Power Query.', title: 'Deskripsi step ditulis sebagai komentar // tepat di atas step dan tampil di Applied Steps Power Query.' }),
       h('span', { class: 'spacer' }),
       h('button', { type: 'button', class: 'btn small ai-btn', id: 'mq-ai-query', text: '✨ Isi query ini…', onclick: () => ai.openBulkM({ current: q }) }),
       h('button', { type: 'button', class: 'btn small ai-btn', id: 'mq-ai-all', text: '✨ Isi semua query…', onclick: () => ai.openBulkM() }),
+      h('button', { type: 'button', class: 'btn small ai-btn', id: 'mq-refactor', text: '🛠 Refactor dengan AI', title: refactorTitle, disabled: !canRefactor, onclick: startRefactor }),
       h('button', { type: 'button', class: 'btn small', title: 'Pengaturan AI', text: '⚙ AI', onclick: () => ai.openSettings() }));
     const s = stats(q);
     const head = h('div', { class: 'view-head' },
       h('h2', { text: label(q) }),
       h('span', { class: 'type-badge ' + (q.kind === 'partition' ? 'table' : 'measure'), text: q.kind === 'partition' ? 'Query tabel' : 'Expression' }),
       h('span', { class: 'muted', id: 'mq-stats', text: `${fmt(q.steps.length)} step · ${fmt(s.filled)}/${fmt(s.total)} terisi` }));
-    main.append(toolbar, head);
+    const sub = result ? (ui.subtab.get(q.key) || 'desc') : 'desc';
+    const subtabs = h('div', { class: 'subtabs', role: 'tablist' },
+      h('button', { type: 'button', role: 'tab', class: 'subtab' + (sub === 'desc' ? ' active' : ''), id: 'mq-sub-desc', text: 'Deskripsi step',
+        onclick: () => { ui.subtab.set(q.key, 'desc'); renderMain(); } }),
+      h('button', { type: 'button', role: 'tab', class: 'subtab' + (sub === 'refactor' ? ' active' : ''), id: 'mq-sub-refactor', disabled: !result,
+        title: result ? '' : 'Belum ada hasil refactor untuk query ini. Klik 🛠 Refactor dengan AI.', text: 'Hasil refactor 🛠',
+        onclick: () => { ui.subtab.set(q.key, 'refactor'); renderMain(); } }));
+    main.append(toolbar, head, subtabs);
+    if (sub === 'refactor' && result) {
+      renderRefactor(q, result, startRefactor);
+      return;
+    }
     if (q.error) {
       main.append(h('div', { class: 'banner warn' },
         h('strong', { text: 'Struktur M query ini tidak dikenali' }), ` (${q.error}). Deskripsi step tidak bisa ditambahkan; deskripsi query tetap bisa diisi.`));
@@ -268,6 +299,82 @@ export function initMPanel(app, root) {
     requestAnimationFrame(() => {
       for (const ta of main.querySelectorAll('textarea')) autoGrow(/** @type {HTMLTextAreaElement} */ (ta));
     });
+  }
+
+  // ---------- "Hasil refactor" sub-tab ----------
+  function checkList(analysis) {
+    return h('ul', { class: 'rf-checks' }, analysis.checks.map((c) => h('li', { class: c.ok ? 'ok' : 'bad' },
+      h('span', { class: 'rf-icon', text: c.ok ? '✓' : '⚠' }), ' ', c.label, c.detail ? h('span', { class: 'muted', text: ' · ' + c.detail }) : null)));
+  }
+
+  function statLine(st) {
+    const delta = (a, b) => (b === a ? '' : b > a ? ` (+${fmt(b - a)})` : ` (−${fmt(a - b)})`);
+    return h('p', { class: 'rf-stats', id: 'rf-stats' },
+      h('strong', { text: 'Baris kode: ' }), `${fmt(st.linesBefore)} → ${fmt(st.linesAfter)}${delta(st.linesBefore, st.linesAfter)}`,
+      h('span', { class: 'muted', text: ' (tanpa komentar dan baris kosong)' }),
+      ' · ', h('strong', { text: 'Step: ' }), `${fmt(st.stepsBefore)} → ${fmt(st.stepsAfter)}`);
+  }
+
+  function codeActions(q, code, suffix) {
+    const crlf = code.replace(/\r\n?/g, '\n').split('\n').join('\r\n') + '\r\n';
+    return h('div', { class: 'actions' },
+      h('button', { type: 'button', class: 'btn primary small', id: 'rf-copy' + suffix, text: 'Copy', onclick: async () => {
+        const ok = await copyText(code);
+        toast(ok ? 'Kode disalin. Tempel di Advanced Editor Power Query (ganti seluruh isi), lalu Done.' : 'Gagal menyalin. Pakai Download .pq.', ok ? 'ok' : 'error');
+      } }),
+      h('button', { type: 'button', class: 'btn small', id: 'rf-download' + suffix, text: 'Download .pq',
+        onclick: () => downloadText(pqFileName(label(q), suffix ? '.alternatif' : '.refactor'), crlf) }));
+  }
+
+  function diffView(original, changed) {
+    const ops = lineDiff(original.split('\n'), changed.split('\n'));
+    return h('div', { class: 'diff rf-diff' }, ops.map((op) => h('div', { class: 'dl ' + op.type },
+      h('span', { class: 'ln', text: op.a >= 0 ? String(op.a + 1) : '' }),
+      h('span', { class: 'ln', text: op.b >= 0 ? String(op.b + 1) : '' }),
+      h('span', { class: 'sign', text: op.type === 'add' ? '+' : op.type === 'del' ? '−' : ' ' }),
+      h('span', { class: 'code', text: truncate(op.text, 2000) }))));
+  }
+
+  function renderRefactor(q, r, rerun) {
+    const view = ui.rview.get(q.key) || 'code';
+    const setView = (v) => { ui.rview.set(q.key, v); renderMain(); };
+    const when = new Date(r.at).toLocaleString('id-ID');
+    main.append(
+      h('div', { class: 'banner warn' },
+        h('strong', { text: 'Belum diuji. ' }),
+        'Hasil ini tidak mengubah script TMDL. Tempel di Advanced Editor Power Query untuk query ini (ganti seluruh kode), lalu refresh dan bandingkan jumlah baris/kolom dengan hasil sebelumnya.'),
+      h('p', { class: 'muted small' }, `Dibuat ${when} · ${r.model} · komentar ${r.lang === 'en' ? 'English' : 'Bahasa Indonesia'}`,
+        r.masked ? ' · URL/server/path disensor saat dikirim dan sudah dikembalikan' : ''));
+    const seg = h('div', { class: 'seg rf-seg', role: 'radiogroup' },
+      h('button', { type: 'button', class: 'seg-btn' + (view === 'code' ? ' active' : ''), id: 'rf-view-code', text: 'Kode refactor', onclick: () => setView('code') }),
+      r.alternative ? h('button', { type: 'button', class: 'seg-btn' + (view === 'alt' ? ' active' : ''), id: 'rf-view-alt', text: 'Alternatif', onclick: () => setView('alt') }) : null,
+      h('button', { type: 'button', class: 'seg-btn' + (view === 'diff' ? ' active' : ''), id: 'rf-view-diff', text: 'Bandingkan asli', onclick: () => setView('diff') }));
+    main.append(seg);
+    const card = h('div', { class: 'card rf-card' });
+    if (view === 'alt' && r.alternative) {
+      card.append(statLine(r.altAnalysis.stats), checkList(r.altAnalysis),
+        h('pre', { class: 'rf-code', id: 'rf-code', text: r.alternative }), codeActions(q, r.alternative, '-alt'));
+    } else if (view === 'diff') {
+      const target = ui.rview.get(q.key + '|diff') === 'alt' && r.alternative ? 'alt' : 'code';
+      const pick = /** @type {HTMLSelectElement} */ (h('select', { id: 'rf-diff-target' },
+        h('option', { value: 'code', text: 'Kode asli vs hasil refactor' }),
+        r.alternative ? h('option', { value: 'alt', text: 'Kode asli vs alternatif' }) : null));
+      pick.value = target;
+      pick.addEventListener('change', () => { ui.rview.set(q.key + '|diff', pick.value); renderMain(); });
+      card.append(h('div', { class: 'row-inline' }, pick, h('span', { class: 'muted small', text: '− baris kode asli · + baris hasil' })),
+        diffView(q.code, target === 'alt' ? r.alternative : r.code));
+    } else {
+      card.append(statLine(r.analysis.stats), checkList(r.analysis),
+        h('pre', { class: 'rf-code', id: 'rf-code', text: r.code }), codeActions(q, r.code, ''));
+    }
+    main.append(card);
+    if (r.explanation) {
+      const points = r.explanation.split('\n').map((l) => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+      main.append(h('div', { class: 'card' }, h('strong', { text: 'Penjelasan perubahan' }),
+        h('ul', { class: 'rf-explain' }, points.map((t) => h('li', { text: t })))));
+    }
+    main.append(h('div', { class: 'actions' },
+      h('button', { type: 'button', class: 'btn small', id: 'rf-rerun', text: '🛠 Refactor ulang', disabled: !app.ai.isReady(), onclick: rerun })));
   }
 
   function refreshRow(key) {
@@ -332,5 +439,8 @@ export function initMPanel(app, root) {
   });
   app.on('bulk', () => {
     if (visible()) renderAll();
+  });
+  app.on('aisettings', () => {
+    if (visible()) renderMain();
   });
 }

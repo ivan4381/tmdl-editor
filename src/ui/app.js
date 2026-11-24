@@ -31,6 +31,7 @@ import { h } from './dom.js';
  * @property {Map<string,string>} aiFilled  key → description last written by AI (for the ✨ marker)
  * @property {import('../core/mquery.js').MQuery[]} queries  Power Query queries (m partitions + expressions)
  * @property {Map<string, {key:string, originalDesc:string, editable:boolean}>} mByKey  expressions + steps
+ * @property {Map<string, any>} refactors  query key → AI refactor result (session only, never written to TMDL)
  */
 
 /** Editable entries of the Power Query view: expression descriptions and step descriptions. */
@@ -103,6 +104,7 @@ const app = {
         aiFilled: new Map(),
         queries,
         mByKey: buildMIndex(parsed, queries),
+        refactors: new Map(),
       };
     });
     this.active = 0;

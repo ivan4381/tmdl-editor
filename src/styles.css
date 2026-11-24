@@ -350,3 +350,25 @@ pre.code-full { max-height: 360px; margin-top: 6px; padding: 8px; background: va
 .mq-grid .c-idx { width: 40px; text-align: right; }
 .mq-grid .c-name { width: 20%; }
 .mq-grid .c-expr { width: 32%; }
+
+/* ---------- refactor ---------- */
+.subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.subtab { border: none; background: none; padding: 8px 14px; cursor: pointer; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subtab:hover:not(:disabled) { color: var(--text); }
+.subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.subtab:disabled { opacity: 0.45; cursor: not-allowed; }
+.rf-badge { font-size: 12px; }
+.rf-seg { margin-bottom: 10px; }
+.rf-card { padding: 12px; }
+.rf-stats { margin: 0 0 6px; }
+.rf-checks { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+.rf-checks .ok .rf-icon { color: var(--ok); font-weight: 700; }
+.rf-checks .bad { color: var(--warn); }
+.rf-checks .bad .rf-icon { font-weight: 700; }
+pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; max-height: 60vh; overflow: auto; white-space: pre; tab-size: 4; }
+.rf-diff { max-height: 60vh; margin-top: 8px; }
+.rf-explain { margin: 6px 0 0; padding-left: 20px; }
+.progress-bar.indeterminate { position: relative; overflow: hidden; }
+.progress-bar.indeterminate > span { position: absolute; width: 35%; animation: rf-slide 1.4s ease-in-out infinite; }
+@keyframes rf-slide { 0% { left: -35%; } 100% { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .progress-bar.indeterminate > span { animation: none; width: 100%; opacity: 0.5; } }

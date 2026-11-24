@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { systemPrompt, makeBatches, buildUserMessage, parseSuggestions, extractJson, cleanSuggestion } from '../src/core/ai-prompt.js';
-import { chatJson, listModels, defaultModel, providerOf, AiError, GEMINI_BASE, ANTHROPIC_BASE, COPILOTKU_PROXY_URL, COPILOTKU_PREFIX } from '../src/ai/providers.js';
+import { chatJson, listModels, defaultModel, providerOf, AiError, GEMINI_BASE, ANTHROPIC_BASE, COPILOTKU_PROXY_URL, COPILOTKU_PREFIX, SCHEMAS } from '../src/ai/providers.js';
 import { parseTmdl } from '../src/core/parser.js';
 import { buildItems } from '../src/core/items.js';
 import { fixture } from './helpers.js';
@@ -141,14 +141,28 @@ test('Claude chat: browser-access headers, structured output, fallback without o
   assert.equal(body.output_config, undefined);
   return { body: { content: [{ type: 'text', text: '{"items":[{"id":"1","description":"x"}]}' }], usage: { input_tokens: 3, output_tokens: 4 }, stop_reason: 'end_turn' } };
 }, async (calls) => {
-  const r = await chatJson({ claude: 'sk-ant-TEST' }, 'claude-haiku-4-5', 'sys', 'user');
+  const r = await chatJson({ claude: 'sk-ant-TEST' }, 'claude-haiku-4-5', 'sys', 'user', { schema: SCHEMAS.descriptions });
   assert.match(r.text, /"description":"x"/);
+  assert.deepEqual(JSON.parse(calls[0].init.body).output_config.format.schema.required, ['items']);
   const h = calls[0].init.headers;
   assert.equal(calls[0].url, `${ANTHROPIC_BASE}/messages`);
   assert.equal(h['x-api-key'], 'sk-ant-TEST');
   assert.equal(h['anthropic-version'], '2023-06-01');
   assert.equal(h['anthropic-dangerous-direct-browser-access'], 'true');
   assert.equal(JSON.parse(calls[0].init.body).system, 'sys');
+}));
+
+test('Claude: each feature sends its own schema; no schema → no format', () => withFetch(() => ({
+  body: { content: [{ type: 'text', text: '{}' }], usage: {}, stop_reason: 'end_turn' },
+}), async (calls) => {
+  await chatJson({ claude: 'k' }, 'claude-x', 's', 'u', { schema: SCHEMAS.mquery });
+  await chatJson({ claude: 'k' }, 'claude-x', 's', 'u', { schema: SCHEMAS.refactor, effort: 'medium' });
+  await chatJson({ claude: 'k' }, 'claude-x', 's', 'u');
+  const oc = calls.map((c) => JSON.parse(c.init.body).output_config);
+  assert.deepEqual(oc[0].format.schema.required, ['queryDescription', 'steps']);
+  assert.deepEqual(oc[1].format.schema.required, ['refactoredCode', 'alternativeCode', 'explanation']);
+  assert.equal(oc[1].effort, 'medium');
+  assert.equal(oc[2].format, undefined);
 }));
 
 test('error mapping: auth, rate, refusal, missing key', async () => {

@@ -2,11 +2,12 @@
 // and bulk fill with progress / cancel. Network calls live in ../ai/providers.js,
 // prompt building and parsing in ../core/ai-prompt.js.
 
-import { listModels, defaultModel, chatJson, providerOf, AiError } from '../ai/providers.js';
+import { listModels, defaultModel, chatJson, providerOf, AiError, SCHEMAS } from '../ai/providers.js';
 
 const PROVIDER_NAME = { gemini: 'Gemini', claude: 'Claude', copilotku: 'Copilotku' };
 import { systemPrompt, buildUserMessage, parseSuggestions, makeBatches, mSystemPrompt, buildMUserMessage, parseMSuggestions } from '../core/ai-prompt.js';
 import { normalizeDescription } from '../core/writer.js';
+import { refactorSystemPrompt, buildRefactorMessage, parseRefactorResponse, unmask, analyzeRefactor } from '../core/refactor.js';
 import { truncate } from '../core/text.js';
 import { h, $, clear, toast, openModal, fmt } from './dom.js';
 import { loadAiKeys, saveAiKeys } from './storage.js';
@@ -143,6 +144,7 @@ export function initAi(app, ctx) {
         app.savePrefs({ aiModels: models, aiModel: model, aiLang: ai.lang, aiContext: ai.context, aiMaskM: ai.maskM, aiConsent: true });
         close();
         toast('Pengaturan AI disimpan · ' + modelLabel(), 'ok');
+        app.emit('aisettings');
         if (onSaved) onSaved();
       });
 
@@ -191,7 +193,7 @@ export function initAi(app, ctx) {
     const system = systemPrompt(ai.lang);
     for (let attempt = 0; ; attempt++) {
       try {
-        const res = await chatJson(ai.keys, ai.model, system, user, { signal, maxTokens: Math.min(16000, 400 + batch.length * 220) });
+        const res = await chatJson(ai.keys, ai.model, system, user, { signal, maxTokens: Math.min(16000, 400 + batch.length * 220), schema: SCHEMAS.descriptions });
         return parseSuggestions(res.text, ids);
       } catch (e) {
         if (attempt === 0 && e instanceof AiError && (e.kind === 'rate' || e.kind === 'busy') && !(signal && signal.aborted)) {
@@ -428,7 +430,7 @@ export function initAi(app, ctx) {
     });
     for (let attempt = 0; ; attempt++) {
       try {
-        const res = await chatJson(ai.keys, ai.model, mSystemPrompt(ai.lang), user, { signal, maxTokens: Math.min(16000, 600 + want.stepKeys.size * 160) });
+        const res = await chatJson(ai.keys, ai.model, mSystemPrompt(ai.lang), user, { signal, maxTokens: Math.min(16000, 600 + want.stepKeys.size * 160), schema: SCHEMAS.mquery });
         return parseMSuggestions(res.text, ids);
       } catch (e) {
         if (attempt === 0 && e instanceof AiError && (e.kind === 'rate' || e.kind === 'busy') && !(signal && signal.aborted)) {
@@ -647,5 +649,96 @@ export function initAi(app, ctx) {
     });
   }
 
-  return { openSettings, suggestOne, openBulk, suggestM, openBulkM, isReady: ready };
+  // ---------- Power Query refactor (separate artefact, never written to TMDL) ----------
+  /**
+   * @param {import('../core/mquery.js').MQuery} query
+   * @param {'id'|'en'} lang
+   * @param {AbortSignal} signal
+   */
+  async function runRefactor(query, lang, signal) {
+    const doc = app.doc();
+    const { user, restore } = buildRefactorMessage(query, { mask: ai.maskM, businessContext: ai.context });
+    const res = await chatJson(ai.keys, ai.model, refactorSystemPrompt(lang), user, {
+      signal, maxTokens: 16000, schema: SCHEMAS.refactor, effort: 'medium', allowThinking: true,
+    });
+    const parsed = parseRefactorResponse(res.text);
+    if (!parsed.code) throw new AiError('other', 'AI tidak mengembalikan kode refactor. Coba lagi atau pilih model lain.');
+    const main = unmask(parsed.code, restore);
+    const alt = unmask(parsed.alternative, restore);
+    const queryNames = new Set(doc.queries.filter((q) => q.key !== query.key).map((q) => (q.kind === 'partition' ? q.table : q.name)));
+    return {
+      code: main.code,
+      alternative: alt.code,
+      explanation: parsed.explanation,
+      lang,
+      model: modelLabel(),
+      at: Date.now(),
+      masked: restore.size,
+      analysis: analyzeRefactor(query.code, main.code, { queryNames, leftPlaceholders: main.left }),
+      altAnalysis: alt.code ? analyzeRefactor(query.code, alt.code, { queryNames, leftPlaceholders: alt.left }) : null,
+    };
+  }
+
+  /**
+   * Dialog: choose the comment language and run the refactor for one query.
+   * @param {import('../core/mquery.js').MQuery} query
+   * @param {()=>void} onDone called after the result is stored in doc.refactors
+   */
+  function openRefactor(query, onDone) {
+    if (!ensureReady(() => openRefactor(query, onDone))) return;
+    const doc = app.doc();
+    openModal('Refactor dengan AI: ' + queryLabel(query), (close) => {
+      const body = h('div');
+      const langId = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'rf-lang', id: 'rf-lang-id', value: 'id' }));
+      const langEn = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'rf-lang', id: 'rf-lang-en', value: 'en' }));
+      (ai.lang === 'en' ? langEn : langId).checked = true;
+      const runBtn = h('button', { type: 'button', class: 'btn primary', id: 'rf-run', text: 'Jalankan' });
+
+      const options = (error) => {
+        clear(body);
+        body.append(
+          error ? h('div', { class: 'banner error', text: error }) : '',
+          h('p', { class: 'muted', text: 'AI menulis ulang kode M query ini supaya lebih mudah dibaca: nama step yang jelas, komentar di setiap step, ringkasan query, dan catatan risiko kualitas data. Hasilnya tampil di sub-tab "Hasil refactor" dan tidak mengubah script TMDL; Anda sendiri yang menempelkannya di Power Query.' }),
+          h('div', { class: 'field' }, h('span', { text: 'Bahasa komentar' }),
+            h('label', { class: 'check', for: 'rf-lang-id' }, langId, ' Bahasa Indonesia'),
+            h('label', { class: 'check', for: 'rf-lang-en' }, langEn, ' English')),
+          h('p', { class: 'muted small' }, 'Model: ', h('strong', { text: modelLabel() }),
+            ai.maskM ? ' · URL/server/path disensor saat dikirim, lalu dikembalikan di hasil' : ' · kode M dikirim tanpa sensor', ' · ',
+            h('button', { type: 'button', class: 'link-btn', text: 'ubah pengaturan AI', onclick: () => openSettings(() => openRefactor(query, onDone)) })),
+          h('div', { class: 'actions' }, runBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })));
+      };
+
+      runBtn.addEventListener('click', async () => {
+        const lang = langEn.checked ? 'en' : 'id';
+        const ctrl = new AbortController();
+        clear(body);
+        body.append(
+          h('div', { class: 'progress-bar wide indeterminate' }, h('span')),
+          h('p', { class: 'ai-progress-text', id: 'rf-progress', text: `Me-refactor ${queryLabel(query)} dengan ${modelLabel()}… Ini bisa memakan waktu hingga beberapa menit untuk query panjang.` }),
+          h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', text: 'Batalkan', onclick: () => ctrl.abort() })));
+        ai.running = true;
+        try {
+          const result = await runRefactor(query, lang, ctrl.signal);
+          if (!doc.refactors) doc.refactors = new Map();
+          doc.refactors.set(query.key, result);
+          ai.running = false;
+          close();
+          toast('Refactor selesai: ' + queryLabel(query), 'ok');
+          onDone();
+        } catch (e) {
+          ai.running = false;
+          if (ctrl.signal.aborted) {
+            options('Dibatalkan.');
+            return;
+          }
+          options(e instanceof AiError ? e.message : 'Refactor gagal: ' + (e && e.message));
+        }
+      });
+
+      options('');
+      return body;
+    });
+  }
+
+  return { openSettings, suggestOne, openBulk, suggestM, openBulkM, openRefactor, isReady: ready };
 }

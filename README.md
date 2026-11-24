@@ -70,6 +70,18 @@ Catatan:
 - Diuji manual di Power BI Desktop: komentar step tampil sebagai deskripsi step; Apply tidak menghapus data dan tidak
   meminta refresh; deskripsi tabel dan expression tampil di Query properties.
 
+### Refactor query M dengan AI
+
+- Tombol **🛠 Refactor dengan AI** di mode Power Query (M), aktif hanya jika API key dan model AI sudah diatur di ⚙ AI.
+  Satu refactor untuk satu query; bahasa komentar (Bahasa Indonesia / English) dipilih setiap kali.
+- Prompt refactor tertanam di aplikasi (`src/core/refactor.js`, `REFACTOR_PROMPT`; terbaca di source HTML), ditambah aturan
+  pengaman (kolom output, sumber data, referensi query, RangeStart/RangeEnd tidak boleh berubah) dan format jawaban JSON.
+- Hasil tampil di sub-tab **Hasil refactor** (query diberi tanda 🛠 di sidebar): kode refactor, versi alternatif (jika
+  ada), perbandingan dengan kode asli, jumlah baris kode dan step sebelum → sesudah (tanpa komentar dan baris kosong),
+  pemeriksaan otomatis, dan penjelasan perubahan. **Copy** atau **Download .pq** untuk ditempel sendiri di Advanced Editor.
+- Hasil refactor **tidak pernah mengubah script TMDL** dan hanya disimpan selama tab terbuka. Belum diuji: refresh dan
+  bandingkan hasil di Power BI setelah menempel.
+
 ## Pengembangan
 
 Butuh Node.js ≥ 18. Tidak ada `npm install` karena tidak ada dependency.
@@ -82,7 +94,7 @@ npm run build    # menghasilkan dist/tmdl-description-editor.html
 Struktur:
 
 ```
-src/core/   pure functions tanpa DOM: text, names, parser, mquery, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
+src/core/   pure functions tanpa DOM: text, names, parser, mquery, refactor, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
 src/ai/     klien AI BYOK (Gemini, Claude, Copilotku via Worker) lewat fetch; dipanggil hanya dari src/ui/ai.js
 src/ui/     DOM: app (state), input-panel, grid, mquery-panel, tools (Excel/bulk/replace), ai (pengaturan, ✨, isi massal), output-panel, storage, dom
 src/index.html, src/styles.css   template; build.mjs meng-inline CSS dan JS ke satu file

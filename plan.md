@@ -334,6 +334,14 @@ Validator tidak sekadar menghapus semua baris `///`, karena komentar DAX `///` d
 - Writer menulis `indent + '// ' + teks` (baris kosong → `indent + '//'`) dengan indent persis baris step. Validator: skeleton juga mengecualikan rentang deskripsi step; daftar query/step (termasuk status bisa-dikomentari) harus sama dan berurutan.
 - AI: satu permintaan per query (kode M ≤ 16.000 karakter, opsi sensor literal URL/server/path/email), jawaban `{"queryDescription","steps":[{id,description}]}`; AI tidak pernah menulis kode.
 
+### 7.7 Refactor query M dengan AI (`refactor.js`)
+
+- Artefak terpisah: hasil tidak pernah ditulis ke script TMDL (prinsip §1 tetap utuh). Disimpan di `doc.refactors` selama sesi.
+- Prompt dari pemilik produk (`REFACTOR_PROMPT`) dengan parameter bahasa (`{LANG}`, `{SUMMARY}`), ditambah aturan aplikasi: kolom output/sumber data/referensi query/RangeStart-RangeEnd tidak boleh berubah, placeholder sensor dipertahankan, baris kosong antara ringkasan dan komentar step pertama (supaya Power Query tidak menggabungkannya ke deskripsi step pertama), jawaban JSON `{refactoredCode, alternativeCode, explanation}` (fallback: blok kode markdown).
+- Pemanggilan: Claude effort `medium` + skema `refactor`; Gemini boleh berpikir; Copilotku `reasoning_effort: medium`; maks 16.000 token.
+- Pemeriksaan (peringatan, tidak memblokir): bisa diurai + `let … in`; fungsi konektor dan literal URL/server/path sama; referensi ke query lain tidak hilang; RangeStart/RangeEnd tetap; placeholder sensor dikembalikan. Statistik baris kode (tanpa komentar/baris kosong; baris di string multi-baris dihitung) dan jumlah step.
+- Output: Copy dan Download `.pq` (CRLF).
+
 ---
 
 ## 8. Spesifikasi UI
@@ -503,3 +511,4 @@ Lihat §3. Jangan dikerjakan tanpa konfirmasi.
 - **Saran AI (Gemini, Claude)** ditambahkan dengan persetujuan eksplisit.
 - **Copilotku** memakai Worker BATIK yang sudah ada (`https://batik-copilotku-proxy.ivan-saja.workers.dev`), tanpa Worker baru. Syarat di sisi Worker: tambahkan `null` ke `ALLOWED_ORIGINS` (`web/copilotku-proxy/wrangler.toml`, repo dama-explorer) lalu deploy ulang. Konsekuensi: halaman `file://` mana pun bisa memakai Worker (tetap butuh key sendiri), dan kuota gratis 100.000 request/hari dipakai bersama BATIK. Worker yang menolak origin menjawab tanpa header CORS, sehingga browser hanya melaporkan error jaringan; pesan error editor menjelaskan langkah perbaikannya.
 - **Uji manual Power Query (Milestone 0 fitur M), oleh pengguna di Power BI Desktop:** (1) komentar `//` di atas step tampil sebagai deskripsi step, (3) `///` di atas `expression` tampil di Query properties, (4) deskripsi step yang diubah lewat UI tetap berbentuk `//`; deskripsi tabel = deskripsi query tabel dua arah (Query properties diisi → `///` di atas `table`; `///` dari TMDL → tampil di Query properties dan tooltip); Close & Apply tanpa menyentuh Query properties tidak menimpa deskripsi tabel; mengubah komentar M lalu Apply tidak menghapus data dan tidak memunculkan peringatan refresh.
+- **Bug diperbaiki:** jalur Claude selalu mengirim skema structured output milik fitur deskripsi objek, termasuk untuk saran deskripsi step M (jawaban dipaksa berbentuk `{items}` sehingga saran M gagal). Sekarang tiap fitur mengirim skemanya sendiri (`SCHEMAS.descriptions|mquery|refactor`).
