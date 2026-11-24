@@ -52,6 +52,9 @@ export function initMPanel(app, root) {
 
   // ---------- sidebar ----------
   function renderSidebar() {
+    // Rebuilding the list would reset the sidebar's scroll position: keep it.
+    const scroller = /** @type {HTMLElement|null} */ (sideList.closest('.sidebar'));
+    const keepTop = scroller ? scroller.scrollTop : 0;
     clear(sideList);
     ui.sideItems.clear();
     const d = doc();
@@ -75,7 +78,8 @@ export function initMPanel(app, root) {
           h('span', { class: 'side-bar' }, h('span')));
         el.addEventListener('click', () => {
           ui.current = q.key;
-          renderAll();
+          markActive(); // keep the sidebar list (and its scroll position) as it is
+          renderMain();
         });
         ui.sideItems.set(q.key, el);
         updateSideItem(q);
@@ -86,6 +90,7 @@ export function initMPanel(app, root) {
       sideList.append(h('p', { class: 'muted small', text: ui.filter === 'todo' ? 'Semua query sudah lengkap.' : 'Tidak ada query Power Query di script ini.' }));
     }
     markActive();
+    if (scroller) scroller.scrollTop = keepTop;
   }
 
   function updateSideItem(q) {

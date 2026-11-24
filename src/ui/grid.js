@@ -132,6 +132,9 @@ export function initGrid(app, root) {
 
   // ---------- sidebar ----------
   function renderSidebar() {
+    // Rebuilding the list would reset the sidebar's scroll position: keep it.
+    const scroller = /** @type {HTMLElement|null} */ (sideList.closest('.sidebar'));
+    const keepTop = scroller ? scroller.scrollTop : 0;
     clear(sideList);
     ui.sideItems.clear();
     const d = doc();
@@ -154,7 +157,7 @@ export function initGrid(app, root) {
         ui.search = '';
         search.value = '';
         ui.page = 0;
-        renderAll();
+        renderView(); // the sidebar list itself stays as it is (no scroll jump)
       });
       ui.sideItems.set(t.key, el);
       updateSideItem(t.key, stats.get(t.key));
@@ -162,6 +165,7 @@ export function initGrid(app, root) {
     }
     markActiveSide();
     updateEmptyCount();
+    if (scroller) scroller.scrollTop = keepTop;
   }
 
   function updateSideItem(tableKey, stat) {
@@ -509,7 +513,7 @@ export function initGrid(app, root) {
     ui.search = '';
     search.value = '';
     ui.page = 0;
-    renderAll();
+    renderView();
   });
   document.addEventListener('keydown', (e) => {
     if (app.step !== 'edit' || app.editMode !== 'objects') return;
@@ -541,6 +545,13 @@ export function initGrid(app, root) {
     ui.page = 0;
     ui.search = '';
     search.value = '';
+  }
+
+  /** Switch the main view without rebuilding the sidebar list. */
+  function renderView() {
+    markActiveSide();
+    renderGrid();
+    tools.refresh();
   }
 
   function renderAll() {
