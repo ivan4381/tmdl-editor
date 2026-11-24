@@ -3104,12 +3104,16 @@ function initAi(app, ctx) {
       const update = () => {
         const list = targets();
         const overwrite = list.filter((it) => normalizeDescription(app.desc(it, doc)) !== '').length;
-        const batches = makeBatches(list).length;
         clear(summary);
-        summary.append(
-          h('strong', { text: `${fmt(list.length)} objek` }), ' akan diisi',
-          overwrite ? h('span', { class: 'warn-text', text: ` (${fmt(overwrite)} di antaranya sudah punya deskripsi dan akan ditimpa)` }) : null,
-          `. Sekitar ${fmt(batches)} permintaan ke ${modelLabel()}.`);
+        if (!list.length) {
+          summary.append(modeEmpty.checked
+            ? 'Saat ini semua objek di cakupan ini sudah memiliki deskripsi.'
+            : 'Tidak ada objek yang bisa diisi di cakupan ini.');
+        } else {
+          summary.append(h('strong', { text: `${fmt(list.length)} objek` }), ' akan diisi');
+          if (overwrite) summary.append(h('span', { class: 'warn-text', text: ` (${fmt(overwrite)} di antaranya sudah punya deskripsi dan akan ditimpa)` }));
+          summary.append('.');
+        }
         startBtn.textContent = `Mulai (${fmt(list.length)} objek)`;
         /** @type {HTMLButtonElement} */ (startBtn).disabled = list.length === 0;
       };
