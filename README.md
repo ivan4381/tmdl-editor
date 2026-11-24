@@ -16,7 +16,9 @@ validator: kalau ada perubahan di luar baris deskripsi, tombol Copy dan Download
 4. Isi deskripsi di langkah **Edit**:
    - `Enter` menyimpan dan pindah ke baris berikutnya, `Shift+Enter` membuat baris baru,
      `Esc` membatalkan perubahan sel, dan `Ctrl+F` membuka pencarian.
-   - Tersedia filter Semua / Kosong / Terisi / Diubah, opsi sembunyikan objek hidden, dan progres per tabel.
+   - Filter status (Semua / Kosong / Terisi / Diubah) dan filter tipe (Semua tipe / Hanya Kolom / Hanya Measure)
+     bekerja bersamaan, misalnya Hanya Kolom + Terisi. Ada juga opsi sembunyikan objek hidden dan progres per tabel.
+   - Paginasi di bawah grid: 10, 25 (default), atau 50 baris per halaman; pilihan diingat browser.
    - **✨ Saran AI** per objek (tombol ✨ di setiap baris) atau sekaligus lewat **✨ Isi dengan AI…**
      (hanya yang kosong, atau semua objek). Deskripsi yang sudah terisi tidak ditimpa tanpa konfirmasi.
    - Isi massal dengan template `{name}`, `{table}`, `{type}`, cari & ganti, serta **export/import Excel (.xlsx)** untuk SME.

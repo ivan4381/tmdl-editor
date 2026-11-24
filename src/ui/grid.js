@@ -8,7 +8,8 @@ import { h, $, clear, autoGrow, fmt } from './dom.js';
 import { initTools } from './tools.js';
 import { initAi } from './ai.js';
 
-const PAGE_SIZE = 200;
+const PAGE_SIZES = [10, 25, 50];
+const DEFAULT_PAGE_SIZE = 25;
 const LINE_MAX = 300;
 const SUMMARY_LINES = 3;
 const LONG_DESC = 500;
@@ -23,6 +24,9 @@ export function initGrid(app, root) {
     /** @type {{kind:'table', table:string}|{kind:'empty'}} */
     view: { kind: 'empty' },
     filter: 'all',
+    /** @type {'all'|'column'|'measure'} */
+    typeFilter: 'all',
+    pageSize: PAGE_SIZES.includes(app.prefs.pageSize) ? app.prefs.pageSize : DEFAULT_PAGE_SIZE,
     hideHidden: !!app.prefs.hideHidden,
     sort: app.prefs.sort === 'empty' ? 'empty' : 'name',
     search: '',
@@ -48,6 +52,9 @@ export function initGrid(app, root) {
   const filterSeg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Filter' },
     ...[['all', 'Semua'], ['empty', 'Kosong'], ['filled', 'Terisi'], ['changed', 'Diubah']].map(([v, label]) =>
       h('button', { type: 'button', role: 'radio', class: 'seg-btn', dataset: { filter: v }, text: label })));
+  const typeSeg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Filter tipe objek', id: 'type-filter' },
+    ...[['all', 'Semua tipe'], ['column', 'Hanya Kolom'], ['measure', 'Hanya Measure']].map(([v, label]) =>
+      h('button', { type: 'button', role: 'radio', class: 'seg-btn', dataset: { type: v }, text: label })));
   const hideHiddenCb = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'hide-hidden' }));
   hideHiddenCb.checked = ui.hideHidden;
   const toolsBar = h('div', { class: 'tools' });
@@ -81,6 +88,7 @@ export function initGrid(app, root) {
       draftSlot,
       h('div', { class: 'toolbar' },
         search,
+        typeSeg,
         filterSeg,
         h('label', { class: 'check', for: 'hide-hidden' }, hideHiddenCb, ' Sembunyikan objek hidden')),
       toolsBar,
@@ -113,6 +121,7 @@ export function initGrid(app, root) {
     else base = (currentGroup() || { items: [] }).items;
     return base.filter((it) => {
       if (ui.hideHidden && it.isHidden) return false;
+      if (ui.typeFilter !== 'all' && it.type !== ui.typeFilter) return false;
       if (ui.filter === 'all') return true;
       const s = itemStatus(it, d.edits);
       if (ui.filter === 'empty') return it.editable && !s.filled;
@@ -191,9 +200,10 @@ export function initGrid(app, root) {
     const d = doc();
     if (!d) return;
     const items = viewItems();
-    const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    const size = ui.pageSize;
+    const pages = Math.max(1, Math.ceil(items.length / size));
     if (ui.page >= pages) ui.page = pages - 1;
-    const slice = items.slice(ui.page * PAGE_SIZE, (ui.page + 1) * PAGE_SIZE);
+    const slice = items.slice(ui.page * size, (ui.page + 1) * size);
     const cross = isCrossTable();
     const frag = document.createDocumentFragment();
     for (const it of slice) frag.append(renderRow(it, cross));
@@ -225,7 +235,7 @@ export function initGrid(app, root) {
     if (!items.length) {
       clear(emptyState);
       emptyState.append(h('p', {
-        text: ui.view.kind === 'empty' && !q && ui.filter === 'all'
+        text: ui.view.kind === 'empty' && !q && ui.filter === 'all' && ui.typeFilter === 'all'
           ? 'Semua objek sudah punya deskripsi. 🎉'
           : 'Tidak ada objek yang cocok dengan filter ini.',
       }));
@@ -233,11 +243,24 @@ export function initGrid(app, root) {
 
     // Pager.
     clear(pager);
-    if (pages > 1) {
+    if (items.length) {
+      const sizeSel = /** @type {HTMLSelectElement} */ (h('select', { id: 'page-size', 'aria-label': 'Baris per halaman' },
+        PAGE_SIZES.map((n) => h('option', { value: String(n), text: String(n) }))));
+      sizeSel.value = String(size);
+      sizeSel.addEventListener('change', () => {
+        const first = ui.page * ui.pageSize; // keep the first visible row on screen
+        ui.pageSize = Number(sizeSel.value);
+        ui.page = Math.floor(first / ui.pageSize);
+        app.savePrefs({ pageSize: ui.pageSize });
+        renderGrid();
+      });
       pager.append(
-        h('button', { type: 'button', class: 'btn small', text: '← Sebelumnya', disabled: ui.page === 0, onclick: () => goPage(ui.page - 1) }),
-        h('span', { class: 'muted', text: `${fmt(ui.page * PAGE_SIZE + 1)}–${fmt(Math.min(items.length, (ui.page + 1) * PAGE_SIZE))} dari ${fmt(items.length)}` }),
-        h('button', { type: 'button', class: 'btn small', text: 'Berikutnya →', disabled: ui.page >= pages - 1, onclick: () => goPage(ui.page + 1) }));
+        h('label', { class: 'page-size' }, 'Baris per halaman ', sizeSel),
+        h('span', { class: 'muted page-range', id: 'page-range', text: `${fmt(ui.page * size + 1)}–${fmt(Math.min(items.length, (ui.page + 1) * size))} dari ${fmt(items.length)}` }),
+        h('span', { class: 'page-nav' },
+          h('button', { type: 'button', class: 'btn small', id: 'page-prev', text: '← Sebelumnya', disabled: ui.page === 0, onclick: () => goPage(ui.page - 1) }),
+          h('span', { class: 'muted', text: `${ui.page + 1}/${pages}` }),
+          h('button', { type: 'button', class: 'btn small', id: 'page-next', text: 'Berikutnya →', disabled: ui.page >= pages - 1, onclick: () => goPage(ui.page + 1) })));
     }
     updateSelectAll();
   }
@@ -429,6 +452,21 @@ export function initGrid(app, root) {
       b.setAttribute('aria-checked', String(on));
     }
   }
+  function markType() {
+    for (const b of typeSeg.querySelectorAll('.seg-btn')) {
+      const on = /** @type {HTMLElement} */ (b).dataset.type === ui.typeFilter;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+  }
+  typeSeg.addEventListener('click', (e) => {
+    const b = /** @type {HTMLElement} */ (e.target).closest('.seg-btn');
+    if (!b) return;
+    ui.typeFilter = /** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.type);
+    ui.page = 0;
+    markType();
+    renderGrid();
+  });
   filterSeg.addEventListener('click', (e) => {
     const b = /** @type {HTMLElement} */ (e.target).closest('.seg-btn');
     if (!b) return;
@@ -512,6 +550,7 @@ export function initGrid(app, root) {
   }
 
   markFilter();
+  markType();
   app.on('docs', () => {
     defaultView();
     renderAll();

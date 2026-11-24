@@ -203,7 +203,7 @@ select, input[type="text"], input[type="search"], input[type="password"] {
 
 .editor { min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
-.search { flex: 1 1 260px; min-width: 200px; }
+.search { flex: 1 1 200px; min-width: 160px; max-width: 360px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
 .seg-btn { border: none; background: var(--surface); padding: 6px 10px; cursor: pointer; border-right: 1px solid var(--border); }
 .seg-btn:last-child { border-right: none; }
@@ -259,7 +259,10 @@ textarea.desc:disabled { background: var(--surface-2); cursor: not-allowed; }
 .changed-mark { color: var(--changed); font-weight: 600; }
 .len-warn { color: var(--warn); }
 .empty-state { padding: 40px; text-align: center; color: var(--muted); }
-.pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 12px 0; }
+.pager { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 12px 0; }
+.page-size { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.page-size select { padding: 3px 6px; }
+.page-nav { display: inline-flex; align-items: center; gap: 8px; }
 .kbd-hint { font-size: 12px; text-align: center; }
 
 /* ---------- output ---------- */

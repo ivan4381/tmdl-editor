@@ -195,9 +195,9 @@ const app = {
     }
     const p = progress(doc.items, doc.edits);
     box.hidden = false;
-    const pct = p.total ? Math.round((p.filled / p.total) * 100) : 0;
+    const pct = p.total ? Math.floor((p.filled / p.total) * 100) : 0; // floor: 100% only when complete
     $('#progress-fill').style.width = pct + '%';
-    $('#progress-text').textContent = `${fmt(p.filled)}/${fmt(p.total)} terisi · ${fmt(p.changed)} diubah`;
+    $('#progress-text').textContent = `${fmt(p.filled)}/${fmt(p.total)} (${pct}%) terisi · ${fmt(p.changed)} diubah`;
     box.title = `${pct}% objek yang bisa diedit sudah punya deskripsi`;
   },
 };
