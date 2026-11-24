@@ -55,6 +55,9 @@ Catatan:
   deskripsi yang ada, nama kolom/measure lain di tabel yang sama, dan konteks bisnis. Script lengkap, partition/M,
   dan objek lain tidak dikirim. Fitur ini perlu persetujuan eksplisit di pengaturan.
 - Hasil AI ditandai **✨ saran AI** dan bergaris putus-putus di grid sampai Anda menyuntingnya. Validator tetap berlaku.
+- **Pemakaian token** ditampilkan setelah setiap pemanggilan AI: notifikasi untuk ✨ satu objek/step dan refactor,
+  ringkasan akhir untuk isi massal, dan total sejak halaman dibuka di ⚙ AI. Angka berasal dari laporan provider
+  (token keluar termasuk token "berpikir" bila ada); bila provider tidak melaporkan, ditulis "tidak dilaporkan".
 - **Copilotku** dipanggil lewat Cloudflare Worker yang sama dengan BATIK web (`batik-copilotku-proxy`), karena API
   Copilotku tidak mendukung CORS. Worker hanya meneruskan `GET /v1/models` dan `POST /v1/chat/completions` dan tidak
   menyimpan key. **Syarat:** `ALLOWED_ORIGINS` di `web/copilotku-proxy/wrangler.toml` (repo dama-explorer) harus

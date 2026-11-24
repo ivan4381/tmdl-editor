@@ -452,6 +452,7 @@ export function initMPanel(app, root) {
         h('strong', { text: 'Belum diuji. ' }),
         'Hasil ini tidak mengubah script TMDL. Tempel di Advanced Editor Power Query untuk query ini (ganti seluruh kode), lalu refresh dan bandingkan jumlah baris/kolom dengan hasil sebelumnya.'),
       h('p', { class: 'muted small' }, `Dibuat ${when} · ${r.model} · komentar ${r.lang === 'en' ? 'English' : 'Bahasa Indonesia'}`,
+        r.usageText ? ' · ' + r.usageText : '',
         r.masked ? ' · URL/server/path disensor saat dikirim dan sudah dikembalikan' : ''));
     const seg = h('div', { class: 'seg rf-seg', role: 'radiogroup' },
       h('button', { type: 'button', class: 'seg-btn' + (view === 'code' ? ' active' : ''), id: 'rf-view-code', text: 'Kode refactor', onclick: () => setView('code') }),

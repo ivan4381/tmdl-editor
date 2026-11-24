@@ -69,6 +69,13 @@ ${order.map((id) => modules.get(id)).join('\n\n')}
 __req(${JSON.stringify(entry)});
 })();`;
 
+// Fail the build on syntax errors (e.g. a duplicate declaration) instead of shipping a broken page.
+try {
+  new Function(runtime); // parse only, nothing runs
+} catch (e) {
+  throw new Error('Bundled JavaScript has a syntax error: ' + e.message);
+}
+
 const css = readFileSync(join(srcDir, 'styles.css'), 'utf8');
 const template = readFileSync(join(srcDir, 'index.html'), 'utf8');
 const safeJs = runtime.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');

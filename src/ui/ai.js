@@ -32,6 +32,8 @@ export function initAi(app, ctx) {
     maskM: !!app.prefs.aiMaskM,
     consent: !!app.prefs.aiConsent,
     running: false,
+    /** token usage since the page was opened */
+    usage: { input: 0, output: 0, requests: 0 },
   };
 
   // Keep the shared dialog open while a bulk run is in progress.
@@ -39,6 +41,21 @@ export function initAi(app, ctx) {
   dlg.addEventListener('cancel', (e) => {
     if (ai.running) e.preventDefault();
   });
+
+  /** Add one reply's token usage to the session total (and an optional accumulator). */
+  const track = (res, acc) => {
+    const u = { input: res.inputTokens || 0, output: res.outputTokens || 0 };
+    for (const t of acc ? [ai.usage, acc] : [ai.usage]) {
+      t.input += u.input;
+      t.output += u.output;
+      t.requests = (t.requests || 0) + 1;
+    }
+    return u;
+  };
+  /** "1.234 token (masuk 1.100 · keluar 134)" */
+  const formatUsage = (u) => (!u.input && !u.output
+    ? 'jumlah token tidak dilaporkan provider'
+    : `${fmt(u.input + u.output)} token (masuk ${fmt(u.input)} · keluar ${fmt(u.output)})`);
 
   const hasKey = () => !!(ai.keys.gemini || ai.keys.claude || ai.keys.copilotku);
   const modelLabel = () => {
@@ -164,6 +181,8 @@ export function initAi(app, ctx) {
         h('label', { class: 'check', for: 'ai-mask-m' }, maskM, ' Sensor URL, server, path, dan email di kode M sebelum dikirim (diganti placeholder seperti <URL_1>)'),
         h('label', { class: 'field' }, h('span', { text: 'Konteks bisnis (opsional, ikut dikirim)' }), context),
         err,
+        ai.usage.requests ? h('p', { class: 'muted small', id: 'ai-session-usage' },
+          `Pemakaian token sejak halaman dibuka: ${formatUsage(ai.usage)} · ${fmt(ai.usage.requests)} permintaan`) : '',
         h('div', { class: 'actions' }, saveBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })),
       ];
     });
@@ -194,7 +213,7 @@ export function initAi(app, ctx) {
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await chatJson(ai.keys, ai.model, system, user, { signal, maxTokens: Math.min(16000, 400 + batch.length * 220), schema: SCHEMAS.descriptions });
-        return parseSuggestions(res.text, ids);
+        return { ...parseSuggestions(res.text, ids), usage: track(res) };
       } catch (e) {
         if (attempt === 0 && e instanceof AiError && (e.kind === 'rate' || e.kind === 'busy') && !(signal && signal.aborted)) {
           await new Promise((r) => setTimeout(r, 4000));
@@ -247,7 +266,7 @@ export function initAi(app, ctx) {
     btn.disabled = true;
     btn.classList.add('busy');
     try {
-      const { suggestions } = await askBatch([item]);
+      const { suggestions, usage } = await askBatch([item]);
       const text = suggestions.get(item.key);
       if (!text) {
         toast('AI tidak mengembalikan saran untuk objek ini. Coba lagi atau pilih model lain.', 'error');
@@ -256,6 +275,7 @@ export function initAi(app, ctx) {
       if (app.doc() !== doc) return;
       markAi(doc, item.key, text);
       app.setDesc(item.key, text, {}, doc);
+      toast('Saran AI diisi · ' + formatUsage(usage), 'ok');
     } catch (e) {
       toast(e instanceof AiError ? e.message : 'Gagal meminta saran AI: ' + (e && e.message), 'error');
     } finally {
@@ -348,6 +368,7 @@ export function initAi(app, ctx) {
         let filled = 0;
         let failed = 0;
         let skipped = 0;
+        const runUsage = { input: 0, output: 0, requests: 0 };
         const errors = new Set();
         const bar = h('span');
         const status = h('p', { class: 'ai-progress-text', id: 'ai-progress' });
@@ -365,7 +386,10 @@ export function initAi(app, ctx) {
           while (next < batches.length && !ctrl.signal.aborted) {
             const batch = batches[next++];
             try {
-              const { suggestions, missing } = await askBatch(batch, ctrl.signal);
+              const { suggestions, missing, usage } = await askBatch(batch, ctrl.signal);
+              runUsage.input += usage.input;
+              runUsage.output += usage.output;
+              runUsage.requests++;
               const pairs = [];
               for (const [key, text] of suggestions) {
                 // Never overwrite something the user changed while the run was going.
@@ -400,6 +424,7 @@ export function initAi(app, ctx) {
             cancelled ? ' Proses dihentikan sebelum selesai.' : '',
             skipped ? ` ${fmt(skipped)} dilewati karena Anda mengubahnya selama proses.` : '',
             failed ? ` ${fmt(failed)} objek gagal.` : ''),
+          h('p', { class: 'muted small', id: 'ai-usage' }, 'Pemakaian token: ' + formatUsage(runUsage) + ` · ${fmt(runUsage.requests)} permintaan`),
           h('ul', { class: 'small-list', hidden: errors.size === 0 }, [...errors].map((m) => h('li', { text: m }))),
           h('p', { class: 'muted', text: 'Saran AI ditandai ✨ di grid. Periksa dan sunting bila perlu sebelum Copy ke Power BI. Filter "Diubah" menampilkan semua yang berubah.' }),
           h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn primary', id: 'ai-done', text: 'Tutup', onclick: close })));
@@ -431,7 +456,7 @@ export function initAi(app, ctx) {
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await chatJson(ai.keys, ai.model, mSystemPrompt(ai.lang), user, { signal, maxTokens: Math.min(16000, 600 + want.stepKeys.size * 160), schema: SCHEMAS.mquery });
-        return parseMSuggestions(res.text, ids);
+        return { ...parseMSuggestions(res.text, ids), usage: track(res) };
       } catch (e) {
         if (attempt === 0 && e instanceof AiError && (e.kind === 'rate' || e.kind === 'busy') && !(signal && signal.aborted)) {
           await new Promise((r) => setTimeout(r, 4000));
@@ -473,6 +498,7 @@ export function initAi(app, ctx) {
       if (app.doc() !== doc) return;
       markAi(doc, key, text);
       app.setDesc(key, text, {}, doc);
+      toast('Saran AI diisi · ' + formatUsage(res.usage), 'ok');
     } catch (e) {
       toast(e instanceof AiError ? e.message : 'Gagal meminta saran AI: ' + (e && e.message), 'error');
     } finally {
@@ -585,6 +611,7 @@ export function initAi(app, ctx) {
         let filled = 0;
         let failed = 0;
         let skipped = 0;
+        const runUsage = { input: 0, output: 0, requests: 0 };
         const errors = new Set();
         const bar = h('span');
         const status = h('p', { class: 'ai-progress-text', id: 'aim-progress' });
@@ -603,6 +630,9 @@ export function initAi(app, ctx) {
             const item = p[next++];
             try {
               const res = await askM(item.query, item, ctrl.signal);
+              runUsage.input += res.usage.input;
+              runUsage.output += res.usage.output;
+              runUsage.requests++;
               const pairs = [];
               const take = (key, text) => {
                 if (!text) return false;
@@ -639,6 +669,7 @@ export function initAi(app, ctx) {
             cancelled ? ' Proses dihentikan sebelum selesai.' : '',
             skipped ? ` ${fmt(skipped)} dilewati karena Anda mengubahnya selama proses.` : '',
             failed ? ` ${fmt(failed)} gagal.` : ''),
+          h('p', { class: 'muted small', id: 'aim-usage' }, 'Pemakaian token: ' + formatUsage(runUsage) + ` · ${fmt(runUsage.requests)} permintaan`),
           h('ul', { class: 'small-list', hidden: errors.size === 0 }, [...errors].map((m) => h('li', { text: m }))),
           h('p', { class: 'muted', text: 'Saran AI ditandai ✨. Periksa dan sunting bila perlu sebelum Copy ke Power BI.' }),
           h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn primary', id: 'aim-done', text: 'Tutup', onclick: close })));
@@ -661,6 +692,7 @@ export function initAi(app, ctx) {
     const res = await chatJson(ai.keys, ai.model, refactorSystemPrompt(lang), user, {
       signal, maxTokens: 16000, schema: SCHEMAS.refactor, effort: 'medium', allowThinking: true,
     });
+    const usage = track(res);
     const parsed = parseRefactorResponse(res.text);
     if (!parsed.code) throw new AiError('other', 'AI tidak mengembalikan kode refactor. Coba lagi atau pilih model lain.');
     const main = unmask(parsed.code, restore);
@@ -674,6 +706,8 @@ export function initAi(app, ctx) {
       model: modelLabel(),
       at: Date.now(),
       masked: restore.size,
+      usage,
+      usageText: formatUsage(usage),
       analysis: analyzeRefactor(query.code, main.code, { queryNames, leftPlaceholders: main.left }),
       altAnalysis: alt.code ? analyzeRefactor(query.code, alt.code, { queryNames, leftPlaceholders: alt.left }) : null,
     };
@@ -723,7 +757,7 @@ export function initAi(app, ctx) {
           doc.refactors.set(query.key, result);
           ai.running = false;
           close();
-          toast('Refactor selesai: ' + queryLabel(query), 'ok');
+          toast('Refactor selesai: ' + queryLabel(query) + ' · ' + result.usageText, 'ok');
           onDone();
         } catch (e) {
           ai.running = false;
