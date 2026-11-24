@@ -170,7 +170,7 @@ export function initInput(app, root) {
           h('span', { class: 'tag', text: doc.parsed.eol === '\r\n' ? 'CRLF' : 'LF' }),
           h('span', { class: 'tag', text: fmt(doc.parsed.lines.length) + ' baris' })),
         h('p', { class: 'summary-counts' },
-          `${fmt(c.table)} tabel, ${fmt(c.column)} kolom, ${fmt(c.measure)} measure, ${fmt(c.withDesc)} deskripsi sudah ada`),
+          `${fmt(c.table)} tabel, ${fmt(c.column)} kolom, ${fmt(c.measure)} measure, ${fmt(c.withDesc)} deskripsi sudah ada` + (c.mQueries ? ` · ${fmt(c.mQueries)} query Power Query` : '')),
       );
       if (doc.parsed.warnings.length) {
         card.append(h('ul', { class: 'warnings' },

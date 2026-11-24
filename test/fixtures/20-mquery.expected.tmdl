@@ -1,0 +1,59 @@
+createOrReplace
+
+	model Model
+
+		/// Penjualan
+		table Sales
+			column Amount
+				dataType: decimal
+
+			partition Sales = m
+				mode: import
+				source =
+						let
+						    // Sumber data penjualan dari SQL Server
+						    Source = Sql.Database("srv.contoso.local", "Sales", [Query = "select * -- // bukan komentar#(lf)from t"]),
+						    /* blok komentar
+						       // juga bukan deskripsi */
+						    // Menyaring baris valid
+						    //
+						    // Baris ketiga
+						    #"Filtered ""Rows""" = Table.SelectRows(Source, each [Url] <> "http://x/y" and [Qty (MT)] > 0),
+						    Nested = let a = 1, b = 2 in a + b,
+
+						    // komentar dipisah baris kosong (bukan deskripsi)
+
+						    // Menambah kolom teks
+						    Multi =
+						        Table.AddColumn(
+						            #"Filtered ""Rows""",
+						            "Teks",
+						            each "baris1
+						// di dalam string
+						baris2"
+						        ),
+						    // Konstanta A
+						    A = 1, B = 2
+						in
+						    B
+
+			partition Calc = calculated
+				source = DATATABLE("x", STRING, {{"a"}})
+
+		expression fnDouble = (x as number) as number => let y = x * 2 in y
+
+		/// Query staging Excel
+		expression Staging = ```
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Data\file.xlsx"), null, true),
+				    // Ambil sheet pertama
+				    Sheet = Source{[Item="Sheet1",Kind="Sheet"]}[Data]
+				in
+				    Sheet
+				```
+
+		expression Broken =
+					let
+					    Source = "unterminated
+					in
+					    Source

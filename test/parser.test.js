@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { parseTmdl, makeKey } from '../src/core/parser.js';
 import { fixture } from './helpers.js';
 
-/** Compact view: [type, table, name, desc, editable?] */
+/** Compact view: [type, table, name, desc, editable?] (Power Query expressions excluded; tested separately) */
 function view(r) {
-  return r.objects.map((o) => [o.type, o.table, o.name, o.originalDesc, ...(o.editable ? [] : ['ref'])]);
+  return r.objects.filter((o) => o.type !== 'expression').map((o) => [o.type, o.table, o.name, o.originalDesc, ...(o.editable ? [] : ['ref'])]);
 }
 
 test('01 basic-table', () => {
@@ -73,9 +73,12 @@ test('05 backtick-expr: fence content is opaque, even when shallower', () => {
     ['table', 'Second', 'Second', ''],
     ['column', 'Second', 'RealCol', ''],
   ]);
-  assert.equal(r.objects[4].dataType, 'string');
+  assert.equal(r.objects.find((o) => o.name === 'RealCol').dataType, 'string');
   assert.match(r.objects[1].expression, /table FakeShallow/);
   assert.deepEqual(r.warnings, []);
+  // The fenced expression is recognised as a (non-container) object; its fake table stays opaque.
+  assert.deepEqual(r.objects.filter((o) => o.type === 'expression').map((o) => o.name), ['Fn X']);
+  assert.deepEqual(r.mQueries.map((q) => [q.name, q.fenced, q.bodyStart + 1, q.bodyEnd + 1]), [['Fn X', true, 19, 20]]);
 });
 
 test('06 partition-m: no fake objects from M', () => {
@@ -189,7 +192,7 @@ test('16 case-insensitive keywords', () => {
 
 test('17 full-model matches plan §9 expected parse', () => {
   const r = parseTmdl(fixture('17-full-model.tmdl'));
-  const got = r.objects.map((o) => [o.type, o.table, o.name, o.originalDesc !== '']);
+  const got = r.objects.filter((o) => o.type !== 'expression').map((o) => [o.type, o.table, o.name, o.originalDesc !== '']);
   assert.deepEqual(got, [
     ['table', 'Calendar', 'Calendar', true],
     ['column', 'Calendar', 'Date', true],
@@ -213,6 +216,23 @@ test('17 full-model matches plan §9 expected parse', () => {
   assert.equal(r.objects[1].indent, '\t\t\t');
   assert.match(r.objects[5].expression, /^VAR _Now = NOW\(\)/);
   assert.match(r.objects[10].expression, /RETURN FORMAT\(_IsSupplySPBE/);
+  // Shared expressions are objects too (query descriptions), after the tables.
+  const ex = r.objects.filter((o) => o.type === 'expression');
+  assert.deepEqual(ex.map((o) => [o.key, o.originalDesc !== '', o.indent]), [
+    ['expression||rootfolder', true, '\t\t'],
+    ['expression||mapping_lintas', false, '\t\t'],
+    ['expression||fn transform dot', false, '\t\t'],
+  ]);
+  assert.equal(ex[0].originalDesc, 'Folder Sharepoint VL06F & MB51 (untuk development & production)');
+  // M code locations: 3 m partitions + 3 expressions (RootFolder is inline, no body lines).
+  assert.deepEqual(r.mQueries.map((q) => [q.kind, q.name, q.descKey, q.bodyStart + 1, q.bodyEnd + 1, q.fenced]), [
+    ['partition', 'Measures Table', 'table|measures table|measures table', 97, 101, false],
+    ['partition', 'Last Refresh', 'table|last refresh|last refresh', 120, 128, false],
+    ['partition', 'VL06F+MB51', 'table|vl06f+mb51|vl06f+mb51', 162, 175, false],
+    ['expression', 'RootFolder', 'expression||rootfolder', 0, 0, false],
+    ['expression', 'Mapping_Lintas', 'expression||mapping_lintas', 200, 210, false],
+    ['expression', 'Fn Transform DOT', 'expression||fn transform dot', 219, 276, true],
+  ]);
 });
 
 test('19 perspective names are not tables/columns', () => {

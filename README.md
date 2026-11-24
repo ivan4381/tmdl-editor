@@ -23,6 +23,8 @@ validator: kalau ada perubahan di luar baris deskripsi, tombol Copy dan Download
      (hanya yang kosong, atau semua objek). Deskripsi yang sudah terisi tidak ditimpa tanpa konfirmasi.
    - Isi massal dengan template `{name}`, `{table}`, `{type}`, cari & ganti, serta **export/import Excel (.xlsx)** untuk SME.
    - Draft tersimpan otomatis di browser (localStorage) dan ditawarkan kembali saat script yang sama di-parse lagi.
+   - Mode **Power Query (M)** (tombol di atas grid): deskripsi **per step** M dan **deskripsi query**, termasuk ✨ AI.
+     Lihat bagian di bawah.
 5. Di langkah **Output**, periksa diff dan status validasi, lalu **Copy to clipboard**. Di TMDL view, buka tab baru,
    paste, lalu klik **Apply**. Simpan PBIP atau commit git dulu sebelum Apply. Untuk script seluruh model, simpan juga
    salinan aslinya lewat **Download original**.
@@ -53,6 +55,21 @@ Catatan:
   memuat `null` (origin halaman `file://`), lalu `npx wrangler deploy`. Tanpa itu, Copilotku gagal dengan pesan yang
   menjelaskan langkah ini.
 
+### Power Query (M): deskripsi step dan query
+
+- Deskripsi step ditulis sebagai komentar `//` tepat di atas baris step pada `let … in` tingkat atas. Power Query
+  menampilkannya sebagai deskripsi step (ikon dan tooltip di Applied Steps), sama seperti deskripsi yang diisi lewat
+  klik kanan step → Properties. Komentar yang sudah ada di atas step terbaca sebagai deskripsi.
+- Deskripsi query tabel = deskripsi tabel (tampil di Data pane, tooltip, dan Query properties). Deskripsi
+  parameter/fungsi/staging = `///` di atas `expression`.
+- Mencakup partition `= m` dan semua `expression` (termasuk yang ber-fence ```). Step yang berbagi baris dengan
+  step lain, atau query yang strukturnya tidak dikenali, tidak bisa diberi komentar (ditandai di layar).
+- AI tidak pernah mengubah kode M: ia hanya memberi teks deskripsi, dan validator memastikan kode M (selain komentar
+  deskripsi step) tetap identik byte-per-byte. Opsi **sensor** di ⚙ AI mengganti URL, server, path, dan email di kode M
+  dengan placeholder (`<URL_1>`, `<SERVER_1>`, …) sebelum dikirim.
+- Diuji manual di Power BI Desktop: komentar step tampil sebagai deskripsi step; Apply tidak menghapus data dan tidak
+  meminta refresh; deskripsi tabel dan expression tampil di Query properties.
+
 ## Pengembangan
 
 Butuh Node.js ≥ 18. Tidak ada `npm install` karena tidak ada dependency.
@@ -65,9 +82,9 @@ npm run build    # menghasilkan dist/tmdl-description-editor.html
 Struktur:
 
 ```
-src/core/   pure functions tanpa DOM: text, names, parser, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
+src/core/   pure functions tanpa DOM: text, names, parser, mquery, writer, validator, diff, zip, xlsx, sheet, bulk, items, ai-prompt
 src/ai/     klien AI BYOK (Gemini, Claude, Copilotku via Worker) lewat fetch; dipanggil hanya dari src/ui/ai.js
-src/ui/     DOM: app (state), input-panel, grid, tools (Excel/bulk/replace), ai (pengaturan, ✨, isi massal), output-panel, storage, dom
+src/ui/     DOM: app (state), input-panel, grid, mquery-panel, tools (Excel/bulk/replace), ai (pengaturan, ✨, isi massal), output-panel, storage, dom
 src/index.html, src/styles.css   template; build.mjs meng-inline CSS dan JS ke satu file
 test/       node:test + fixtures (TAB asli, lihat .editorconfig dan .gitattributes)
 reference/  prototipe Python algoritma parser (hanya acuan, tidak ikut build)

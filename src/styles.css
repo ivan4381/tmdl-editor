@@ -333,3 +333,20 @@ dialog::backdrop { background: rgba(10, 14, 22, 0.45); }
 .row-inline select { flex: 1; min-width: 0; }
 .progress-bar.wide { width: 100%; height: 10px; margin: 16px 0 8px; }
 .quote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+
+/* ---------- edit mode bar + Power Query view ---------- */
+.mode-bar { display: inline-flex; gap: 4px; margin-bottom: 12px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.mode-btn { border: none; background: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; color: var(--muted); font-weight: 500; }
+.mode-btn:hover { color: var(--text); }
+.mode-btn.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.mode-count { font-weight: 400; color: var(--muted); font-size: 12px; }
+.side-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 10px 8px 4px; }
+.q-desc { padding: 12px; }
+.q-desc-head { margin-bottom: 6px; }
+.code-details { margin: 0 0 12px; }
+.code-details summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+pre.code-full { max-height: 360px; margin-top: 6px; padding: 8px; background: var(--surface-2); border-radius: 6px; }
+.mq-grid { min-width: 760px; }
+.mq-grid .c-idx { width: 40px; text-align: right; }
+.mq-grid .c-name { width: 20%; }
+.mq-grid .c-expr { width: 32%; }

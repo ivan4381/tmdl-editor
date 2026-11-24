@@ -1,7 +1,9 @@
 // Validator (plan §7.3): proves that only description lines of recognised
-// objects differ between the original and the output.
+// objects (`///`) and step-description comments (`//` above a recognised
+// Power Query step) differ between the original and the output.
 
 import { parseTmdl } from './parser.js';
+import { collectQueries } from './mquery.js';
 
 /**
  * @typedef {Object} ValidationIssue
@@ -23,10 +25,16 @@ const MAX_ERRORS = 20;
  * Lines that are NOT part of a recognised description range, with their line numbers.
  * @param {import('./parser.js').ParseResult} parsed
  */
-export function skeleton(parsed) {
+export function skeleton(parsed, queries = collectQueries(parsed)) {
   const skip = new Uint8Array(parsed.lines.length);
   for (const o of parsed.objects) {
     for (let j = o.descStart; j < o.declLine; j++) skip[j] = 1;
+  }
+  for (const q of queries) {
+    for (const st of q.steps) {
+      if (!st.commentable) continue;
+      for (let j = st.descStart; j < st.line; j++) skip[j] = 1;
+    }
   }
   const out = [];
   for (let i = 0; i < parsed.lines.length; i++) {
@@ -68,9 +76,22 @@ export function validateRoundTrip(original, output) {
     }
   }
 
+  // Same Power Query queries and steps, same order.
+  const qa = collectQueries(a);
+  const qb = collectQueries(b);
+  const stepsOf = (qs) => qs.flatMap((q) => [q.key + (q.error ? '!' : ''), ...q.steps.map((st) => st.key + (st.commentable ? '' : '#'))]);
+  const pa = stepsOf(qa);
+  const pb = stepsOf(qb);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if (pa[i] !== pb[i]) {
+      push({ line: 0, message: 'Struktur query/step Power Query berubah.', expected: pa[i] ?? '(tidak ada)', actual: pb[i] ?? '(tidak ada)' });
+      break;
+    }
+  }
+
   // Skeleton must be identical line by line, whitespace included.
-  const sa = skeleton(a);
-  const sb = skeleton(b);
+  const sa = skeleton(a, qa);
+  const sb = skeleton(b, qb);
   const n = Math.max(sa.length, sb.length);
   for (let i = 0; i < n; i++) {
     const x = sa[i];

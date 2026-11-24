@@ -2,6 +2,7 @@
 // UI never edits TMDL text itself: it only keeps an edits Map and calls core.
 
 import { parseTmdl } from '../core/parser.js';
+import { collectQueries } from '../core/mquery.js';
 import { buildItems, progress, currentDescription } from '../core/items.js';
 import { normalizeDescription } from '../core/writer.js';
 import { hashText } from '../core/text.js';
@@ -10,6 +11,8 @@ import * as storage from './storage.js';
 import { initInput } from './input-panel.js';
 import { initGrid } from './grid.js';
 import { initOutput } from './output-panel.js';
+import { initMPanel } from './mquery-panel.js';
+import { h } from './dom.js';
 
 /**
  * @typedef {Object} Doc
@@ -26,7 +29,23 @@ import { initOutput } from './output-panel.js';
  * @property {import('./storage.js').Draft|null} draft   draft offered for restore
  * @property {Set<string>} selected
  * @property {Map<string,string>} aiFilled  key → description last written by AI (for the ✨ marker)
+ * @property {import('../core/mquery.js').MQuery[]} queries  Power Query queries (m partitions + expressions)
+ * @property {Map<string, {key:string, originalDesc:string, editable:boolean}>} mByKey  expressions + steps
  */
+
+/** Editable entries of the Power Query view: expression descriptions and step descriptions. */
+function buildMIndex(parsed, queries) {
+  const m = new Map();
+  for (const o of parsed.objects) {
+    if (o.type !== 'expression') continue;
+    const prev = m.get(o.key);
+    if (!prev || (!prev.editable && o.editable)) m.set(o.key, { key: o.key, originalDesc: o.originalDesc, editable: o.editable });
+  }
+  for (const q of queries) {
+    for (const st of q.steps) m.set(st.key, { key: st.key, originalDesc: st.originalDesc, editable: st.commentable });
+  }
+  return m;
+}
 
 const listeners = new Map();
 let nextId = 1;
@@ -37,7 +56,11 @@ const app = {
   active: 0,
   /** @type {'input'|'edit'|'output'} */
   step: 'input',
+  /** @type {'objects'|'mquery'} */
+  editMode: 'objects',
   prefs: storage.loadPrefs(),
+  /** shared AI helper (set by the grid) */
+  ai: null,
 
   /** @returns {Doc|null} */
   doc() {
@@ -62,6 +85,7 @@ const app = {
     this.docs = sources.map((s) => {
       const parsed = parseTmdl(s.text);
       const { items, byKey, tables } = buildItems(parsed);
+      const queries = collectQueries(parsed);
       const hash = hashText(s.text);
       return {
         id: nextId++,
@@ -77,6 +101,8 @@ const app = {
         draft: storage.loadDraft(hash),
         selected: new Set(),
         aiFilled: new Map(),
+        queries,
+        mByKey: buildMIndex(parsed, queries),
       };
     });
     this.active = 0;
@@ -92,6 +118,17 @@ const app = {
     this.updateChrome();
   },
 
+  /** Any editable entry (object item, expression or step) by key. */
+  entry(key, doc = this.doc()) {
+    return doc.byKey.get(key) || doc.mByKey.get(key) || null;
+  },
+
+  setEditMode(mode) {
+    if (mode === this.editMode) return;
+    this.editMode = mode;
+    this.emit('editmode', mode);
+  },
+
   /** Current description text for an item of the active doc. */
   desc(item, doc = this.doc()) {
     return currentDescription(item, doc.edits);
@@ -104,7 +141,7 @@ const app = {
    * @param {{silent?:boolean}} [opt]
    */
   setDesc(key, value, opt = {}, doc = this.doc()) {
-    const item = doc.byKey.get(key);
+    const item = this.entry(key, doc);
     if (!item || !item.editable) return;
     if (doc.draft) {
       // Editing without restoring = starting fresh; the old draft will be overwritten.
@@ -131,7 +168,7 @@ const app = {
     doc.draft = null;
     let n = 0;
     for (const [k, v] of draft.edits) {
-      const item = doc.byKey.get(k);
+      const item = this.entry(k, doc);
       if (item && item.editable) {
         this.setDesc(k, v, { silent: true }, doc);
         n++;
@@ -217,7 +254,35 @@ function boot() {
   }
   $('#doc-select').addEventListener('change', (e) => app.setActive(Number(/** @type {HTMLSelectElement} */ (e.target).value)));
   initInput(app, $('#panel-input'));
-  initGrid(app, $('#panel-edit'));
+  const editPanel = $('#panel-edit');
+  const modeBar = h('div', { class: 'mode-bar', role: 'tablist', 'aria-label': 'Jenis deskripsi' },
+    h('button', { type: 'button', class: 'mode-btn active', role: 'tab', id: 'mode-objects', dataset: { mode: 'objects' }, text: 'Tabel, kolom & measure' }),
+    h('button', { type: 'button', class: 'mode-btn', role: 'tab', id: 'mode-mquery', dataset: { mode: 'mquery' } }, 'Power Query (M) ', h('span', { class: 'mode-count', id: 'mode-mquery-count' })));
+  const gridRoot = h('div', { id: 'objects-root' });
+  const mRoot = h('div', { id: 'mquery-root', hidden: true });
+  editPanel.append(modeBar, gridRoot, mRoot);
+  modeBar.addEventListener('click', (e) => {
+    const b = /** @type {HTMLElement} */ (e.target).closest('.mode-btn');
+    if (b) app.setEditMode(/** @type {any} */ (b.dataset.mode));
+  });
+  app.on('editmode', (mode) => {
+    for (const b of modeBar.querySelectorAll('.mode-btn')) {
+      const on = /** @type {HTMLElement} */ (b).dataset.mode === mode;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+    }
+    gridRoot.hidden = mode !== 'objects';
+    mRoot.hidden = mode !== 'mquery';
+  });
+  const updateMCount = () => {
+    const d = app.doc();
+    const n = d ? d.queries.length : 0;
+    $('#mode-mquery-count').textContent = n ? `(${fmt(n)} query)` : '(tidak ada)';
+  };
+  app.on('docs', updateMCount);
+  app.on('active', updateMCount);
+  initGrid(app, gridRoot);
+  initMPanel(app, mRoot);
   initOutput(app, $('#panel-output'));
   app.goto('input');
   app.updateChrome();

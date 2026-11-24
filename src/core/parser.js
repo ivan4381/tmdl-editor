@@ -5,7 +5,7 @@
 import { splitText, leadingWhitespace, isBlank, measureIndent, indentDepth } from './text.js';
 import { NAME_SRC, parseObjectName } from './names.js';
 
-/** @typedef {'table'|'column'|'measure'} ObjType */
+/** @typedef {'table'|'column'|'measure'|'expression'} ObjType */
 
 /**
  * @typedef {Object} TmdlObject
@@ -33,11 +33,29 @@ import { NAME_SRC, parseObjectName } from './names.js';
  * @property {{line:number, message:string}[]} warnings
  * @property {boolean} hasCreateOrReplace
  * @property {boolean} hasModel
+ * @property {MQueryRange[]} mQueries  Power Query (M) code locations: m partitions and shared expressions
+ */
+
+/**
+ * @typedef {Object} MQueryRange
+ * @property {'partition'|'expression'} kind
+ * @property {string} key        partition: `partition|table|name`; expression: same key as its object
+ * @property {string} name       partition or expression name
+ * @property {string} table      owning table (partition) or '' (expression)
+ * @property {string} descKey    object key holding the query description (table or expression)
+ * @property {number} declLine   line of `source =` / `expression … =`
+ * @property {number} bodyStart  first line of the M body (-1 when the body is inline on declLine)
+ * @property {number} bodyEnd    last non-blank line of the M body (inclusive)
+ * @property {boolean} fenced
+ * @property {boolean} editable  false under `ref`
  */
 
 const CONTAINERS = new Set(['createorreplace', 'database', 'model']);
 const TABLE_RE = new RegExp('^(ref\\s+)?table\\s+(' + NAME_SRC + ')(\\s*=.*)?$', 'i');
 const CHILD_RE = new RegExp('^(column|measure)\\s+(' + NAME_SRC + ')(\\s*=(.*))?$', 'i');
+const EXPR_RE = new RegExp('^(ref\\s+)?expression\\s+(' + NAME_SRC + ')(\\s*=(.*))?$', 'i');
+const PART_M_RE = new RegExp('^partition\\s+(' + NAME_SRC + ')\\s*=\\s*m$', 'i');
+const SOURCE_RE = /^source\s*=(.*)$/i;
 const FENCE_OPEN_RE = /=\s*(`{3,})$/;
 const EXPR_MAX_CHARS = 4000;
 const EXPR_MAX_LINES = 40;
@@ -95,6 +113,21 @@ export function parseTmdl(raw) {
   let collector = null;
   let hasCreateOrReplace = false;
   let hasModel = false;
+  /** @type {MQueryRange[]} */
+  const mQueries = [];
+  /** open M body: {q, stopAt, inFence}; ends at a non-blank line with depth <= stopAt */
+  let mBody = null;
+  const endMBody = () => {
+    if (!mBody) return;
+    if (mBody.q.bodyEnd < mBody.q.bodyStart) mBody.q.bodyStart = -1; // empty body
+    mQueries.push(mBody.q);
+    mBody = null;
+  };
+  const openMBody = (q, i, stopAt, inFence) => {
+    q.bodyStart = i + 1;
+    q.bodyEnd = i;
+    mBody = { q, stopAt, inFence };
+  };
 
   const finishCollector = () => {
     if (!collector) return;
@@ -126,8 +159,10 @@ export function parseTmdl(raw) {
       if (line.trim() === fence.close) {
         fence = null;
         if (collector && collector.inFence) finishCollector();
-      } else if (collector && collector.inFence) {
-        collect(line);
+        if (mBody && mBody.inFence) endMBody();
+      } else {
+        if (collector && collector.inFence) collect(line);
+        if (mBody && mBody.inFence && !isBlank(line)) mBody.q.bodyEnd = i;
       }
       continue;
     }
@@ -140,6 +175,15 @@ export function parseTmdl(raw) {
     const ws = leadingWhitespace(line);
     const body = line.slice(ws.length).trimEnd();
     const d = indentDepth(ws, unit);
+
+    // Unfenced M body (partition source / expression): every deeper line belongs to it.
+    if (mBody && !mBody.inFence) {
+      if (d > mBody.stopAt) {
+        mBody.q.bodyEnd = i;
+        continue;
+      }
+      endMBody();
+    }
 
     if (body.startsWith('///')) {
       // `///` never opens a fence or changes context. Deep ones are DAX/M comments
@@ -187,6 +231,53 @@ export function parseTmdl(raw) {
       };
       objects.push(obj);
       stack.push({ kind: 'table', depth: d, obj, name });
+    } else if (allContainers && (m = EXPR_RE.exec(body))) {
+      // Shared expression (Power Query parameter / function / staging query).
+      const name = parseObjectName(m[2]);
+      const desc = readDescription(lines, i, ws);
+      /** @type {TmdlObject} */
+      const obj = {
+        key: makeKey('expression', '', name),
+        type: 'expression',
+        table: '',
+        name,
+        declLine: i,
+        descStart: desc.descStart,
+        indent: ws,
+        originalDesc: desc.text,
+        isHidden: false,
+        editable: !m[1],
+      };
+      objects.push(obj);
+      stack.push({ kind: 'expression', depth: d, obj });
+      if (m[3] !== undefined) {
+        /** @type {MQueryRange} */
+        const q = { kind: 'expression', key: obj.key, name, table: '', descKey: obj.key, declLine: i, bodyStart: -1, bodyEnd: -1, fenced: !!fenceMatch, editable: obj.editable };
+        const rhs = (m[4] || '').trim();
+        if (fenceMatch) openMBody(q, i, -1, true);
+        else if (rhs === '') openMBody(q, i, d + 1, false);
+        else mQueries.push(q);
+      }
+    } else if (top && top.kind === 'table' && d === top.depth + 1 && (m = PART_M_RE.exec(body))) {
+      stack.push({ kind: 'mpartition', depth: d, name: parseObjectName(m[1]), table: top.name, tableObj: top.obj });
+    } else if (top && top.kind === 'mpartition' && d === top.depth + 1 && (m = SOURCE_RE.exec(body))) {
+      /** @type {MQueryRange} */
+      const q = {
+        kind: 'partition',
+        key: ('partition|' + top.table + '|' + top.name).toLowerCase(),
+        name: top.name,
+        table: top.table,
+        descKey: top.tableObj.key,
+        declLine: i,
+        bodyStart: -1,
+        bodyEnd: -1,
+        fenced: !!fenceMatch,
+        editable: top.tableObj.editable,
+      };
+      if (fenceMatch) openMBody(q, i, -1, true);
+      else if (m[1].trim() === '') openMBody(q, i, d, false);
+      else mQueries.push(q);
+      stack.push({ kind: 'other', depth: d });
     } else if (top && top.kind === 'table' && d === top.depth + 1 && (m = CHILD_RE.exec(body))) {
       const type = /** @type {ObjType} */ (m[1].toLowerCase());
       const name = parseObjectName(m[2]);
@@ -233,6 +324,7 @@ export function parseTmdl(raw) {
   }
 
   finishCollector();
+  endMBody();
   if (fence) {
     warnings.push({ line: fence.line, message: 'Blok ``` dibuka di baris ' + (fence.line + 1) + ' tetapi tidak pernah ditutup.' });
   }
@@ -244,7 +336,7 @@ export function parseTmdl(raw) {
       if (!prev.warned) {
         warnings.push({
           line: o.declLine,
-          message: 'Objek ' + o.type + ' "' + (o.type === 'table' ? o.name : o.table + '[' + o.name + ']') +
+          message: 'Objek ' + o.type + ' "' + (o.type === 'table' || o.type === 'expression' ? o.name : o.table + '[' + o.name + ']') +
             '" dideklarasikan lebih dari sekali (baris ' + (prev.line + 1) + ' dan ' + (o.declLine + 1) + '). Semua kemunculan akan ikut diperbarui.',
         });
         prev.warned = true;
@@ -257,5 +349,6 @@ export function parseTmdl(raw) {
     warnings.push({ line: 0, message: 'Tidak ada table, column, atau measure yang dikenali.' });
   }
 
-  return { lines, eol, hasBom, trailingNewline, objects, warnings, hasCreateOrReplace, hasModel };
+  mQueries.sort((a, b) => a.declLine - b.declLine);
+  return { lines, eol, hasBom, trailingNewline, objects, warnings, hasCreateOrReplace, hasModel, mQueries };
 }

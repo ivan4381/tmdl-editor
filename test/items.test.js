@@ -40,5 +40,5 @@ test('status and progress follow edits', () => {
 });
 
 test('summarize', () => {
-  assert.deepEqual(summarize(parseTmdl(fixture('17-full-model.tmdl'))), { table: 4, column: 4, measure: 3, withDesc: 10 });
+  assert.deepEqual(summarize(parseTmdl(fixture('17-full-model.tmdl'))), { table: 4, column: 4, measure: 3, expression: 3, withDesc: 10, mQueries: 6 });
 });

@@ -5,7 +5,7 @@
 import { listModels, defaultModel, chatJson, providerOf, AiError } from '../ai/providers.js';
 
 const PROVIDER_NAME = { gemini: 'Gemini', claude: 'Claude', copilotku: 'Copilotku' };
-import { systemPrompt, buildUserMessage, parseSuggestions, makeBatches } from '../core/ai-prompt.js';
+import { systemPrompt, buildUserMessage, parseSuggestions, makeBatches, mSystemPrompt, buildMUserMessage, parseMSuggestions } from '../core/ai-prompt.js';
 import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
 import { h, $, clear, toast, openModal, fmt } from './dom.js';
@@ -28,6 +28,7 @@ export function initAi(app, ctx) {
     model: app.prefs.aiModel || '',
     lang: app.prefs.aiLang === 'en' ? 'en' : 'id',
     context: app.prefs.aiContext || '',
+    maskM: !!app.prefs.aiMaskM,
     consent: !!app.prefs.aiConsent,
     running: false,
   };
@@ -67,6 +68,8 @@ export function initAi(app, ctx) {
         placeholder: 'Opsional. Contoh: Model monitoring penyaluran LPG dari terminal ke SPBE. MOR = Marketing Operation Region.',
       }));
       context.value = ai.context;
+      const maskM = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'ai-mask-m' }));
+      maskM.checked = ai.maskM;
       const err = h('div', { class: 'banner error', hidden: true });
 
       let current = ai.models;
@@ -135,9 +138,9 @@ export function initAi(app, ctx) {
           showErr(`Model ${model} butuh API key ${PROVIDER_NAME[providerOf(model)]}.`);
           return;
         }
-        Object.assign(ai, { keys, remember: remember.checked, models, model, lang: /** @type {any} */ (lang.value), context: context.value, consent: true });
+        Object.assign(ai, { keys, remember: remember.checked, models, model, lang: /** @type {any} */ (lang.value), context: context.value, maskM: maskM.checked, consent: true });
         saveAiKeys(keys, remember.checked);
-        app.savePrefs({ aiModels: models, aiModel: model, aiLang: ai.lang, aiContext: ai.context, aiConsent: true });
+        app.savePrefs({ aiModels: models, aiModel: model, aiLang: ai.lang, aiContext: ai.context, aiMaskM: ai.maskM, aiConsent: true });
         close();
         toast('Pengaturan AI disimpan · ' + modelLabel(), 'ok');
         if (onSaved) onSaved();
@@ -147,6 +150,7 @@ export function initAi(app, ctx) {
         h('div', { class: 'banner warn ai-notice' },
           h('strong', { text: 'Data akan dikirim ke penyedia AI. ' }),
           'Saat Anda menekan ✨, nama tabel/kolom/measure, ekspresi DAX/M, deskripsi yang sudah ada, dan konteks bisnis untuk objek tersebut dikirim ke Google (Gemini), Anthropic (Claude), atau Copilotku (lewat proxy Cloudflare Worker batik-copilotku-proxy yang hanya meneruskan, tanpa menyimpan) memakai API key Anda sendiri. ',
+          'Untuk Power Query, kode M query yang diminta ikut dikirim (bisa berisi nama server, URL, dan path; gunakan opsi sensor di bawah). ',
           'Tidak ada yang dikirim sebelum tombol ✨ ditekan, dan sisa script tidak pernah dikirim. Pastikan kebijakan data organisasi Anda mengizinkannya.'),
         h('label', { class: 'check', for: 'ai-consent' }, consent, ' Saya mengerti dan setuju data objek dikirim ke penyedia AI yang saya pilih'),
         h('label', { class: 'field' }, h('span', { text: 'Google Gemini API key' }), gKey),
@@ -155,6 +159,7 @@ export function initAi(app, ctx) {
         h('label', { class: 'check', for: 'ai-remember' }, remember, ' Ingat key di browser ini (tanpa centang: hilang saat tab ditutup)'),
         h('div', { class: 'field' }, h('span', { text: 'Model' }), h('div', { class: 'row-inline' }, modelSel, loadBtn), modelInfo),
         h('label', { class: 'field' }, h('span', { text: 'Bahasa deskripsi' }), lang),
+        h('label', { class: 'check', for: 'ai-mask-m' }, maskM, ' Sensor URL, server, path, dan email di kode M sebelum dikirim (diganti placeholder seperti <URL_1>)'),
         h('label', { class: 'field' }, h('span', { text: 'Konteks bisnis (opsional, ikut dikirim)' }), context),
         err,
         h('div', { class: 'actions' }, saveBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })),
@@ -216,7 +221,7 @@ export function initAi(app, ctx) {
           if (!answered) resolve(false);
         }, { once: true });
         return [
-          h('p', null, h('strong', { text: `${item.table} › ${item.name}` }), ' sudah punya deskripsi:'),
+          h('p', null, h('strong', { text: item.label || `${item.table} › ${item.name}` }), ' sudah punya deskripsi:'),
           h('blockquote', { class: 'quote', text: truncate(current, 600) }),
           h('p', { text: 'Ganti dengan saran AI? Anda tetap bisa membatalkannya dengan tombol ↺ atau Esc di sel.' }),
           h('div', { class: 'actions' },
@@ -403,5 +408,244 @@ export function initAi(app, ctx) {
     });
   }
 
-  return { openSettings, suggestOne, openBulk, isReady: ready };
+  // ---------- Power Query (M) ----------
+  /**
+   * Ask the model for one query. Retries once on rate/busy errors.
+   * @param {import('../core/mquery.js').MQuery} query
+   * @param {{wantQueryDesc:boolean, stepKeys:Set<string>}} want
+   */
+  async function askM(query, want, signal) {
+    const doc = app.doc();
+    const { user, ids } = buildMUserMessage(query, {
+      descOf: (key) => {
+        const e = app.entry(key, doc);
+        return e ? app.desc(e, doc) : '';
+      },
+      businessContext: ai.context,
+      mask: ai.maskM,
+      wantQueryDesc: want.wantQueryDesc,
+      stepKeys: want.stepKeys,
+    });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await chatJson(ai.keys, ai.model, mSystemPrompt(ai.lang), user, { signal, maxTokens: Math.min(16000, 600 + want.stepKeys.size * 160) });
+        return parseMSuggestions(res.text, ids);
+      } catch (e) {
+        if (attempt === 0 && e instanceof AiError && (e.kind === 'rate' || e.kind === 'busy') && !(signal && signal.aborted)) {
+          await new Promise((r) => setTimeout(r, 4000));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  const queryLabel = (q) => (q.kind === 'partition' ? q.table + (q.name !== q.table ? ' (' + q.name + ')' : '') : q.name);
+
+  /**
+   * ✨ for one field of a query: its description (target 'query') or one step.
+   * @param {import('../core/mquery.js').MQuery} query
+   * @param {{kind:'query'}|{kind:'step', step:import('../core/mquery.js').MStep}} target
+   * @param {HTMLButtonElement} btn
+   */
+  async function suggestM(query, target, btn) {
+    if (!ensureReady(() => suggestM(query, target, btn))) return;
+    const doc = app.doc();
+    const key = target.kind === 'query' ? query.descKey : target.step.key;
+    const entry = app.entry(key, doc);
+    if (!entry || !entry.editable) return;
+    const current = normalizeDescription(app.desc(entry, doc));
+    const label = target.kind === 'query' ? `Deskripsi query ${queryLabel(query)}` : `${queryLabel(query)} › ${target.step.name}`;
+    if (current && !(await confirmOverwrite({ label }, current))) return;
+    btn.disabled = true;
+    btn.classList.add('busy');
+    try {
+      const res = await askM(query, target.kind === 'query'
+        ? { wantQueryDesc: true, stepKeys: new Set() }
+        : { wantQueryDesc: false, stepKeys: new Set([key]) });
+      const text = target.kind === 'query' ? res.queryDescription : res.steps.get(key);
+      if (!text) {
+        toast('AI tidak mengembalikan saran. Coba lagi atau pilih model lain.', 'error');
+        return;
+      }
+      if (app.doc() !== doc) return;
+      markAi(doc, key, text);
+      app.setDesc(key, text, {}, doc);
+    } catch (e) {
+      toast(e instanceof AiError ? e.message : 'Gagal meminta saran AI: ' + (e && e.message), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('busy');
+    }
+  }
+
+  /**
+   * Fill query descriptions and step descriptions for many queries.
+   * @param {{current?:import('../core/mquery.js').MQuery}} [opt]
+   */
+  function openBulkM(opt = {}) {
+    if (!ensureReady(() => openBulkM(opt))) return;
+    const doc = app.doc();
+    openModal('Isi deskripsi Power Query dengan AI', (close) => {
+      const scope = /** @type {HTMLSelectElement} */ (h('select', { id: 'aim-scope' },
+        h('option', { value: 'all', text: `Semua query (${fmt(doc.queries.length)})` }),
+        opt.current ? h('option', { value: 'current', text: `Query ini: ${queryLabel(opt.current)}` }) : null));
+      if (opt.current) scope.value = 'current';
+      const modeEmpty = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'aim-mode', id: 'aim-mode-empty' }));
+      const modeAll = /** @type {HTMLInputElement} */ (h('input', { type: 'radio', name: 'aim-mode', id: 'aim-mode-all' }));
+      modeEmpty.checked = true;
+      const incQuery = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'aim-inc-query' }));
+      incQuery.checked = true;
+      const summary = h('p', { class: 'ai-summary' });
+      const startBtn = h('button', { type: 'button', class: 'btn primary', id: 'aim-start' });
+      const body = h('div');
+
+      const isEmpty = (key) => {
+        const e = app.entry(key, doc);
+        return !e || normalizeDescription(app.desc(e, doc)) === '';
+      };
+      const editable = (key) => {
+        const e = app.entry(key, doc);
+        return !!e && e.editable;
+      };
+      /** @returns {{query:any, wantQueryDesc:boolean, stepKeys:Set<string>}[]} */
+      const plan = () => {
+        const qs = scope.value === 'current' && opt.current ? [opt.current] : doc.queries;
+        const out = [];
+        for (const q of qs) {
+          const wantQueryDesc = incQuery.checked && editable(q.descKey) && (!modeEmpty.checked || isEmpty(q.descKey));
+          const stepKeys = new Set(q.steps.filter((st) => st.commentable && (!modeEmpty.checked || isEmpty(st.key))).map((st) => st.key));
+          if (wantQueryDesc || stepKeys.size) out.push({ query: q, wantQueryDesc, stepKeys });
+        }
+        return out;
+      };
+      const allKeys = (p) => p.flatMap((x) => [...(x.wantQueryDesc ? [x.query.descKey] : []), ...x.stepKeys]);
+      const update = () => {
+        const p = plan();
+        const keys = allKeys(p);
+        const overwrite = keys.filter((k) => !isEmpty(k)).length;
+        const steps = p.reduce((n, x) => n + x.stepKeys.size, 0);
+        const qd = p.filter((x) => x.wantQueryDesc).length;
+        clear(summary);
+        if (!keys.length) {
+          summary.append(modeEmpty.checked
+            ? 'Saat ini semua query dan step di cakupan ini sudah memiliki deskripsi.'
+            : 'Tidak ada yang bisa diisi di cakupan ini.');
+        } else {
+          summary.append(h('strong', { text: `${fmt(steps)} step` }), ` dan `, h('strong', { text: `${fmt(qd)} deskripsi query` }), ` di ${fmt(p.length)} query akan diisi`);
+          if (overwrite) summary.append(h('span', { class: 'warn-text', text: ` (${fmt(overwrite)} sudah punya deskripsi dan akan ditimpa)` }));
+          summary.append('.');
+        }
+        startBtn.textContent = `Mulai (${fmt(keys.length)})`;
+        /** @type {HTMLButtonElement} */ (startBtn).disabled = keys.length === 0;
+      };
+      for (const el of [scope, modeEmpty, modeAll, incQuery]) el.addEventListener('change', update);
+
+      startBtn.addEventListener('click', () => {
+        const p = plan();
+        const overwrite = allKeys(p).filter((k) => !isEmpty(k));
+        if (overwrite.length) confirmStep(p, overwrite);
+        else runStep(p);
+      });
+
+      function optionsStep() {
+        clear(body);
+        body.append(
+          h('label', { class: 'field' }, h('span', { text: 'Cakupan' }), scope),
+          h('div', { class: 'field' }, h('span', { text: 'Yang diisi' }),
+            h('label', { class: 'check', for: 'aim-mode-empty' }, modeEmpty, ' Hanya yang masih kosong'),
+            h('label', { class: 'check', for: 'aim-mode-all' }, modeAll, ' Semua (timpa deskripsi yang sudah ada)'),
+            h('label', { class: 'check', for: 'aim-inc-query' }, incQuery, ' Termasuk deskripsi query (untuk query tabel = deskripsi tabel)')),
+          summary,
+          h('p', { class: 'muted small' }, 'Model: ', h('strong', { text: modelLabel() }), ai.maskM ? ' · URL/server/path disensor' : ' · kode M dikirim tanpa sensor', ' · ',
+            h('button', { type: 'button', class: 'link-btn', text: 'ubah pengaturan AI', onclick: () => openSettings(() => openBulkM(opt)) })),
+          h('div', { class: 'actions' }, startBtn, h('button', { type: 'button', class: 'btn ghost', text: 'Batal', onclick: close })));
+        update();
+      }
+
+      function confirmStep(p, overwrite) {
+        clear(body);
+        body.append(
+          h('div', { class: 'banner warn' },
+            h('strong', { text: `${fmt(overwrite.length)} deskripsi yang sudah terisi akan ditimpa dengan saran AI.` }),
+            ' Deskripsi asli dari script tetap bisa dikembalikan per baris dengan tombol ↺.'),
+          h('p', { text: 'Lanjutkan?' }),
+          h('div', { class: 'actions' },
+            h('button', { type: 'button', class: 'btn primary', id: 'aim-confirm', text: `Ya, timpa ${fmt(overwrite.length)} deskripsi`, onclick: () => runStep(p) }),
+            h('button', { type: 'button', class: 'btn ghost', text: 'Kembali', onclick: optionsStep })));
+      }
+
+      async function runStep(p) {
+        const ctrl = new AbortController();
+        const keys = allKeys(p);
+        const snapshot = new Map(keys.map((k) => [k, normalizeDescription(app.desc(app.entry(k, doc), doc))]));
+        let doneQ = 0;
+        let filled = 0;
+        let failed = 0;
+        let skipped = 0;
+        const errors = new Set();
+        const bar = h('span');
+        const status = h('p', { class: 'ai-progress-text', id: 'aim-progress' });
+        clear(body);
+        body.append(h('div', { class: 'progress-bar wide' }, bar), status,
+          h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', text: 'Batalkan', onclick: () => ctrl.abort() })));
+        const paint = () => {
+          bar.style.width = (p.length ? (doneQ / p.length) * 100 : 100) + '%';
+          status.textContent = `${fmt(doneQ)}/${fmt(p.length)} query diproses · ${fmt(filled)} terisi` + (failed ? ` · ${fmt(failed)} gagal` : '');
+        };
+        paint();
+        ai.running = true;
+        let next = 0;
+        const worker = async () => {
+          while (next < p.length && !ctrl.signal.aborted) {
+            const item = p[next++];
+            try {
+              const res = await askM(item.query, item, ctrl.signal);
+              const pairs = [];
+              const take = (key, text) => {
+                if (!text) return false;
+                if (normalizeDescription(app.desc(app.entry(key, doc), doc)) !== snapshot.get(key)) {
+                  skipped++;
+                  return true;
+                }
+                markAi(doc, key, text);
+                pairs.push([key, text]);
+                return true;
+              };
+              if (item.wantQueryDesc && !take(item.query.descKey, res.queryDescription)) failed++;
+              for (const k of item.stepKeys) if (!take(k, res.steps.get(k))) failed++;
+              if (pairs.length) app.setMany(pairs, doc);
+              filled += pairs.length;
+              if (res.missing.length || (item.wantQueryDesc && !res.queryDescription)) errors.add('Sebagian step/query tidak mendapat saran dari AI.');
+            } catch (e) {
+              if (ctrl.signal.aborted) break;
+              failed += item.stepKeys.size + (item.wantQueryDesc ? 1 : 0);
+              errors.add(e instanceof AiError ? e.message : String(e && e.message));
+              if (e instanceof AiError && FATAL.has(e.kind)) ctrl.abort();
+            }
+            doneQ++;
+            paint();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, p.length) }, worker));
+        ai.running = false;
+        const cancelled = ctrl.signal.aborted && doneQ < p.length;
+        clear(body);
+        body.append(
+          h('div', { class: filled ? 'banner ok' : 'banner warn' },
+            h('strong', { text: `${fmt(filled)} deskripsi diisi AI.` }),
+            cancelled ? ' Proses dihentikan sebelum selesai.' : '',
+            skipped ? ` ${fmt(skipped)} dilewati karena Anda mengubahnya selama proses.` : '',
+            failed ? ` ${fmt(failed)} gagal.` : ''),
+          h('ul', { class: 'small-list', hidden: errors.size === 0 }, [...errors].map((m) => h('li', { text: m }))),
+          h('p', { class: 'muted', text: 'Saran AI ditandai ✨. Periksa dan sunting bila perlu sebelum Copy ke Power BI.' }),
+          h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn primary', id: 'aim-done', text: 'Tutup', onclick: close })));
+      }
+
+      optionsStep();
+      return body;
+    });
+  }
+
+  return { openSettings, suggestOne, openBulk, suggestM, openBulkM, isReady: ready };
 }

@@ -38,6 +38,7 @@ export function buildItems(parsed) {
   /** @type {Map<string, TableGroup>} */
   const groups = new Map();
   for (const o of parsed.objects) {
+    if (o.type === 'expression') continue; // Power Query expressions live in the M view
     let it = byKey.get(o.key);
     if (!it) {
       it = {
@@ -122,10 +123,10 @@ export function progress(items, edits) {
 
 /** Summary counts for the input step. */
 export function summarize(parsed) {
-  const c = { table: 0, column: 0, measure: 0, withDesc: 0 };
+  const c = { table: 0, column: 0, measure: 0, expression: 0, withDesc: 0, mQueries: (parsed.mQueries || []).length };
   for (const o of parsed.objects) {
     c[o.type]++;
-    if (o.originalDesc !== '') c.withDesc++;
+    if (o.type !== 'expression' && o.originalDesc !== '') c.withDesc++;
   }
   return c;
 }

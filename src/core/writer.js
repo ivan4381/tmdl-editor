@@ -1,7 +1,9 @@
 // Writer (plan §7.2): only inserts / replaces / removes `///` description lines
-// of recognised objects. Every other byte is copied from the original lines.
+// of recognised objects, and whole-line `//` step descriptions inside Power
+// Query (M) code. Every other byte is copied from the original lines.
 
 import { joinText } from './text.js';
+import { collectQueries, stepCommentLines } from './mquery.js';
 
 /**
  * Normalise description text the way it will be written.
@@ -50,6 +52,17 @@ export function applyDescriptions(parsed, edits) {
     const edit = /** @type {string} */ (edits.get(obj.key));
     if (!isChanged(obj, edit)) continue;
     replacements.set(obj.declLine, { descStart: obj.descStart, lines: descriptionLines(obj.indent, normalizeDescription(edit)) });
+  }
+  // Power Query step descriptions (keys `step|…`).
+  if ([...edits.keys()].some((k) => k.startsWith('step|'))) {
+    for (const q of collectQueries(parsed)) {
+      for (const st of q.steps) {
+        if (!st.commentable || !edits.has(st.key)) continue;
+        const edit = /** @type {string} */ (edits.get(st.key));
+        if (!isChanged(st, edit)) continue;
+        replacements.set(st.line, { descStart: st.descStart, lines: stepCommentLines(st.indent, normalizeDescription(edit)) });
+      }
+    }
   }
   if (replacements.size === 0) return joinText(parsed.lines, parsed);
 

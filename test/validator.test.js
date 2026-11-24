@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateRoundTrip, skeleton } from '../src/core/validator.js';
 import { parseTmdl } from '../src/core/parser.js';
+import { collectQueries } from '../src/core/mquery.js';
 import { fixture } from './helpers.js';
 
 const full = fixture('17-full-model.tmdl');
@@ -18,8 +19,11 @@ test('skeleton excludes only recognised description lines', () => {
   const p = parseTmdl(full);
   const sk = skeleton(p);
   const descLines = p.objects.reduce((n, o) => n + (o.declLine - o.descStart), 0);
-  assert.equal(sk.length, p.lines.length - descLines);
-  assert.ok(sk.some((l) => l.text.includes('/// Folder Sharepoint'))); // expression desc stays in skeleton
+  const stepLines = collectQueries(p).flatMap((q) => q.steps).reduce((n, st) => n + (st.line - st.descStart), 0);
+  assert.equal(stepLines, 6); // existing // comments above steps in fixture 17
+  assert.equal(sk.length, p.lines.length - descLines - stepLines);
+  assert.ok(!sk.some((l) => l.text.includes('/// Folder Sharepoint'))); // expression desc is a description now
+  assert.ok(sk.some((l) => l.text.includes('/// Custom Functions'))); // queryGroup desc stays in skeleton
 });
 
 test('changing a DAX line fails', () => {
@@ -53,9 +57,9 @@ test('trailing newline change fails', () => {
   assert.ok(v.errors.some((e) => /Newline/.test(e.message)));
 });
 
-test('adding a description to an expression (out of scope) fails', () => {
-  const bad = replaceOnce(full, '\t\texpression Mapping_Lintas =', '\t\t/// baru\r\n\t\texpression Mapping_Lintas =');
-  assert.equal(validateRoundTrip(full, bad).ok, false);
+test('adding a description to an expression (query description) passes', () => {
+  const ok = replaceOnce(full, '\t\texpression Mapping_Lintas =', '\t\t/// baru\r\n\t\texpression Mapping_Lintas =');
+  assert.equal(validateRoundTrip(full, ok).ok, true);
 });
 
 test('changing a queryGroup description fails', () => {

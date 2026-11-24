@@ -195,3 +195,53 @@ test('CSP connect-src allows exactly the provider hosts', () => {
   const connect = /connect-src ([^;]+)/.exec(csp)[1].trim().split(/\s+/);
   assert.deepEqual(connect.sort(), [new URL(ANTHROPIC_BASE).origin, new URL(GEMINI_BASE).origin, new URL(COPILOTKU_PROXY_URL).origin].sort());
 });
+
+// ---------- Power Query (M) prompts ----------
+import { maskSensitive, sensitiveKind, mSystemPrompt, buildMUserMessage, parseMSuggestions } from '../src/core/ai-prompt.js';
+import { collectQueries } from '../src/core/mquery.js';
+
+test('sensitiveKind / maskSensitive', () => {
+  assert.equal(sensitiveKind('https://contoso.sharepoint.com/sites/x'), 'URL');
+  assert.equal(sensitiveKind('C:\\Data\\a.xlsx'), 'PATH');
+  assert.equal(sensitiveKind('\\\\fileserver\\share'), 'PATH');
+  assert.equal(sensitiveKind('srv.contoso.local'), 'SERVER');
+  assert.equal(sensitiveKind('10.1.2.3:1433'), 'SERVER');
+  assert.equal(sensitiveKind('user@contoso.com'), 'EMAIL');
+  for (const t of ['Sales', 'file.xlsx', '3.14', 'Data Supply Point LPG.xlsx', 'Shared Documents', '']) assert.equal(sensitiveKind(t), '', t);
+  const m = maskSensitive('let S = Sql.Database("srv.local", "Sales"), U = Web.Contents("https://x.y/z"), V = "srv.local" // "https://keep.comment"\nin S');
+  assert.equal(m.code, 'let S = Sql.Database("<SERVER_1>", "Sales"), U = Web.Contents("<URL_1>"), V = "<SERVER_1>" // "https://keep.comment"\nin S');
+  assert.equal(m.count, 2);
+  // Unparseable code falls back to a regex pass.
+  assert.equal(maskSensitive('x = "https://a.b/c" & "unterminated').code, 'x = "<URL_1>" & "unterminated');
+});
+
+test('buildMUserMessage: requested steps, existing descriptions, masking, query kind', () => {
+  const parsed = parseTmdl(fixture('20-mquery.tmdl'));
+  const q = collectQueries(parsed)[0];
+  const descs = { 'table|sales|sales': '', [q.steps[0].key]: 'Ambil data dari server' };
+  const want = new Set([q.steps[1].key, q.steps[3].key]);
+  const { user, ids, masked } = buildMUserMessage(q, { descOf: (k) => descs[k] ?? '', mask: true, wantQueryDesc: true, stepKeys: want, businessContext: 'Model penjualan' });
+  const payload = JSON.parse(user.slice(user.indexOf('{')));
+  assert.equal(payload.query.name, 'Sales');
+  assert.equal(payload.query.writeQueryDescription, true);
+  assert.equal(payload.businessContext, 'Model penjualan');
+  assert.deepEqual(payload.steps.map((s) => [s.id, s.name, s.write]), [['1', 'Source', false], ['2', 'Filtered "Rows"', true], ['3', 'Nested', false], ['4', 'Multi', true], ['5', 'A', false], ['6', 'B', false]]);
+  assert.equal(payload.steps[0].existingDescription, 'Ambil data dari server');
+  assert.deepEqual([...ids], [['2', q.steps[1].key], ['4', q.steps[3].key]]);
+  assert.ok(payload.code.includes('"<SERVER_1>"') && !payload.code.includes('srv.contoso.local'));
+  assert.ok(payload.code.includes('"<URL_1>"'));
+  assert.equal(masked, 2);
+  const plain = buildMUserMessage(q, { descOf: () => '', mask: false, wantQueryDesc: false, stepKeys: new Set() });
+  assert.ok(JSON.parse(plain.user.slice(plain.user.indexOf('{'))).code.includes('srv.contoso.local'));
+  assert.match(mSystemPrompt('id'), /Bahasa Indonesia/);
+  assert.match(mSystemPrompt('en'), /"queryDescription"/);
+});
+
+test('parseMSuggestions', () => {
+  const ids = new Map([['2', 'k2'], ['4', 'k4']]);
+  const r = parseMSuggestions('```json\n{"queryDescription":"Data penjualan harian","steps":[{"id":"2","description":"Menyaring baris"},{"id":"9","description":"x"}]}\n```', ids);
+  assert.equal(r.queryDescription, 'Data penjualan harian');
+  assert.deepEqual([...r.steps], [['k2', 'Menyaring baris']]);
+  assert.deepEqual(r.missing, ['k4']);
+  assert.equal(parseMSuggestions('nonsense', ids).steps.size, 0);
+});

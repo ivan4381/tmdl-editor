@@ -26,7 +26,7 @@ Node.js hanya dibutuhkan developer untuk menjalankan test dan build. Pengguna ak
 
 ### Prinsip yang tidak boleh dilanggar
 
-- **Hanya baris deskripsi yang berubah.** Jangan pernah serialize ulang TMDL dari model objek. Writer hanya menyisipkan, mengganti, atau menghapus baris deskripsi `///` milik objek yang dikenali. Semua byte lain dibiarkan apa adanya: tab, spasi, line ending, DAX, M, annotation, dan blank line.
+- **Hanya baris deskripsi yang berubah.** Jangan pernah serialize ulang TMDL dari model objek. Writer hanya menyisipkan, mengganti, atau menghapus baris deskripsi `///` milik objek yang dikenali, dan baris komentar `//` utuh tepat di atas step Power Query yang dikenali (§7.6). Semua byte lain dibiarkan apa adanya: tab, spasi, line ending, DAX, M, annotation, dan blank line.
 - **Offline.** Tidak ada request jaringan, CDN, atau font eksternal. Metadata model tidak boleh keluar dari browser. **Satu-satunya pengecualian** adalah fitur Saran AI (opt-in, BYOK, persetujuan eksplisit): hanya data objek yang diminta yang dikirim ke Gemini/Claude/Copilotku, dan CSP hanya mengizinkan tiga host itu (Copilotku lewat Worker proxy BATIK).
 - **Gagal dengan aman.** Kalau validator menemukan perubahan di luar baris deskripsi, tombol Copy diblokir.
 
@@ -325,6 +325,15 @@ Validator tidak sekadar menghapus semua baris `///`, karena komentar DAX `///` d
 - Batch: maks 25 objek / ±24.000 karakter, objek satu tabel dikelompokkan, 2 permintaan paralel, retry sekali untuk 429/5xx, berhenti total untuk error key/izin/model.
 - Keamanan isi: hasil AI hanya diterapkan jika deskripsi objek tidak diubah pengguna selama proses berjalan. Menimpa deskripsi yang sudah terisi selalu didahului konfirmasi (per objek dan massal).
 
+### 7.6 Power Query (M): deskripsi step dan query (`mquery.js`)
+
+- Parser mencatat rentang kode M: partition `= m` → properti `source =` (tanpa fence: baris lebih dalam dari `source`; ber-fence: sampai penutup), dan `expression` (sekarang objek bertipe `expression` dengan deskripsi `///`).
+- Tokenizer M: spasi, `//`, `/* */`, string `"…"` (`""`, boleh multi-baris), `#"…"`, identifier (boleh bertitik), angka, punctuator. Step = `nama =` di `let … in` tingkat atas (let pertama di luar kurung; header fungsi boleh). Koma pemisah dihitung hanya di luar kurung dan let bersarang. Gagal tokenisasi/struktur → query ditandai, tidak pernah ditulis.
+- Deskripsi step = blok baris yang hanya berisi komentar `//` (token komentar baris yang dimulai di karakter non-spasi pertama) tepat di atas baris nama step; baris kosong memutus. Step yang namanya tidak di awal baris (mis. `A = 1, B = 2`, atau `let` sebaris) tidak bisa dikomentari.
+- Key: `step|<queryKey>|<nama step mentah>` (case-sensitive), queryKey `partition|tabel|partition` atau `expression||nama`. Deskripsi query tabel = key tabel; expression = key expression.
+- Writer menulis `indent + '// ' + teks` (baris kosong → `indent + '//'`) dengan indent persis baris step. Validator: skeleton juga mengecualikan rentang deskripsi step; daftar query/step (termasuk status bisa-dikomentari) harus sama dan berurutan.
+- AI: satu permintaan per query (kode M ≤ 16.000 karakter, opsi sensor literal URL/server/path/email), jawaban `{"queryDescription","steps":[{id,description}]}`; AI tidak pernah menulis kode.
+
 ---
 
 ## 8. Spesifikasi UI
@@ -493,3 +502,4 @@ Lihat §3. Jangan dikerjakan tanpa konfirmasi.
 - **Excel menggantikan CSV** (permintaan pengguna). Writer/reader `.xlsx` ditulis sendiri tanpa dependency; diverifikasi terbaca openpyxl, dan file yang disimpan ulang openpyxl terbaca kembali.
 - **Saran AI (Gemini, Claude)** ditambahkan dengan persetujuan eksplisit.
 - **Copilotku** memakai Worker BATIK yang sudah ada (`https://batik-copilotku-proxy.ivan-saja.workers.dev`), tanpa Worker baru. Syarat di sisi Worker: tambahkan `null` ke `ALLOWED_ORIGINS` (`web/copilotku-proxy/wrangler.toml`, repo dama-explorer) lalu deploy ulang. Konsekuensi: halaman `file://` mana pun bisa memakai Worker (tetap butuh key sendiri), dan kuota gratis 100.000 request/hari dipakai bersama BATIK. Worker yang menolak origin menjawab tanpa header CORS, sehingga browser hanya melaporkan error jaringan; pesan error editor menjelaskan langkah perbaikannya.
+- **Uji manual Power Query (Milestone 0 fitur M), oleh pengguna di Power BI Desktop:** (1) komentar `//` di atas step tampil sebagai deskripsi step, (3) `///` di atas `expression` tampil di Query properties, (4) deskripsi step yang diubah lewat UI tetap berbentuk `//`; deskripsi tabel = deskripsi query tabel dua arah (Query properties diisi → `///` di atas `table`; `///` dari TMDL → tampil di Query properties dan tooltip); Close & Apply tanpa menyentuh Query properties tidak menimpa deskripsi tabel; mengubah komentar M lalu Apply tidak menghapus data dan tidak memunculkan peringatan refresh.

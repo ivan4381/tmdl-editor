@@ -512,7 +512,7 @@ export function initGrid(app, root) {
     renderAll();
   });
   document.addEventListener('keydown', (e) => {
-    if (app.step !== 'edit') return;
+    if (app.step !== 'edit' || app.editMode !== 'objects') return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       search.focus();
@@ -525,6 +525,7 @@ export function initGrid(app, root) {
     return d ? d.items.filter((it) => d.selected.has(it.key) && it.editable) : [];
   };
   const ai = initAi(app, { viewItems, selectedItems });
+  app.ai = ai;
   const tools = initTools(app, toolsBar, { viewItems, selectedItems, ai });
 
   // ---------- lifecycle ----------
@@ -560,7 +561,10 @@ export function initGrid(app, root) {
     renderAll();
   });
   app.on('step', (s) => {
-    if (s === 'edit') renderAll();
+    if (s === 'edit' && app.editMode === 'objects') renderAll();
+  });
+  app.on('editmode', (mode) => {
+    if (mode === 'objects') renderAll();
   });
   app.on('draft', () => renderDraft());
   app.on('edit', (key) => {
@@ -570,6 +574,6 @@ export function initGrid(app, root) {
     updateEmptyCount();
   });
   app.on('bulk', () => {
-    if (app.step === 'edit') renderAll();
+    if (app.step === 'edit' && app.editMode === 'objects') renderAll();
   });
 }
