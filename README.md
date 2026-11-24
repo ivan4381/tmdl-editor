@@ -19,6 +19,12 @@ validator: kalau ada perubahan di luar baris deskripsi, tombol Copy dan Download
    - Filter status (Semua / Kosong / Terisi / Diubah) dan filter tipe (Semua tipe / Hanya Kolom / Hanya Measure)
      bekerja bersamaan, misalnya Hanya Kolom + Terisi. Ada juga opsi sembunyikan objek hidden dan progres per tabel.
    - Paginasi di bawah grid: 10, 25 (default), atau 50 baris per halaman; pilihan diingat browser.
+   - Sidebar dikelompokkan otomatis (bisa di-expand/collapse): **Special Table** (kalender: nama seperti Calendar/DimDate/
+     Date Table, `dataCategory: Time`, tabel tanggal otomatis; tabel measure: nama seperti Measures Table/_Measures, atau
+     tabel yang hanya berisi measure), **Fact Table** (`Fact…`), **Dimension Table** (`Dim…`), **Lainnya**. Huruf setelah
+     awalan tidak boleh huruf kecil (`Factory`, `Dimonitor` masuk Lainnya). Di mode Power Query ditambah **Staging**
+     (`Staging…`/`stg…` atau query group "Staging") dan **Fungsi & Parameter** (`fn…`/`fx…`, `PBI_ResultType = Function`,
+     fungsi `(x) =>`, atau `meta [IsParameterQuery = true]`). Query yang tidak dimuat ke model ditulis *miring*.
    - **✨ Saran AI** per objek (tombol ✨ di setiap baris) atau sekaligus lewat **✨ Isi dengan AI…**
      (hanya yang kosong, atau semua objek). Deskripsi yang sudah terisi tidak ditimpa tanpa konfirmasi.
    - Isi massal dengan template `{name}`, `{table}`, `{type}`, cari & ganti, serta **export/import Excel (.xlsx)** untuk SME.

@@ -391,3 +391,5 @@ pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface
 /* M code comments (refactor result, code previews, diff) */
 .m-comment { color: var(--code-comment); }
 pre.expr .m-comment { opacity: 1; }
+/* queries that are not loaded to the model (Enable load off) */
+.side-item.not-loaded .side-name { font-style: italic; }

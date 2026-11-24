@@ -208,6 +208,9 @@ export function readStepDescription(lines, stepLine, floor, commentLines) {
  * @property {string} code         full M body (dedented), '' when inline
  * @property {MStep[]} steps
  * @property {string} error        why steps could not be recognised ('' when fine)
+ * @property {string} inline       expression written on the declaration line ('' otherwise)
+ * @property {string} queryGroup   Power Query group of an expression
+ * @property {string} resultType   `PBI_ResultType` annotation of an expression
  */
 
 const CODE_MAX = 20000;
@@ -229,7 +232,11 @@ export function collectQueries(parsed) {
   const out = [];
   for (const r of parsed.mQueries || []) {
     /** @type {MQuery} */
-    const q = { key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '' };
+    const obj = r.kind === 'expression' ? parsed.objects.find((o) => o.key === r.descKey) : null;
+    const q = {
+      key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '',
+      inline: r.inline || '', queryGroup: (obj && obj.queryGroup) || '', resultType: (obj && obj.resultType) || '',
+    };
     if (r.bodyStart >= 0) {
       const body = parsed.lines.slice(r.bodyStart, r.bodyEnd + 1);
       const code = dedentLines(body).join('\n');

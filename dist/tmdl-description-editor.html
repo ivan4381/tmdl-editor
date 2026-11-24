@@ -400,6 +400,8 @@ pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface
 /* M code comments (refactor result, code previews, diff) */
 .m-comment { color: var(--code-comment); }
 pre.expr .m-comment { opacity: 1; }
+/* queries that are not loaded to the model (Enable load off) */
+.side-item.not-loaded .side-name { font-style: italic; }
 
 </style>
 </head>
@@ -620,6 +622,9 @@ const { NAME_SRC, parseObjectName } = __req("core/names.js");
  * @property {string=} dataType
  * @property {boolean} isHidden
  * @property {boolean} editable     false for `ref table`
+ * @property {string=} dataCategory table `dataCategory` (e.g. Time for a marked date table)
+ * @property {string=} queryGroup   expression `queryGroup`
+ * @property {string=} resultType   expression `annotation PBI_ResultType` (Table, Text, Function, …)
  */
 
 /**
@@ -647,6 +652,7 @@ const { NAME_SRC, parseObjectName } = __req("core/names.js");
  * @property {number} bodyEnd    last non-blank line of the M body (inclusive)
  * @property {boolean} fenced
  * @property {boolean} editable  false under `ref`
+ * @property {string=} inline    expression body written on the declaration line (e.g. a parameter value)
  */
 
 const CONTAINERS = new Set(['createorreplace', 'database', 'model']);
@@ -851,8 +857,8 @@ function parseTmdl(raw) {
       stack.push({ kind: 'expression', depth: d, obj });
       if (m[3] !== undefined) {
         /** @type {MQueryRange} */
-        const q = { kind: 'expression', key: obj.key, name, table: '', descKey: obj.key, declLine: i, bodyStart: -1, bodyEnd: -1, fenced: !!fenceMatch, editable: obj.editable };
         const rhs = (m[4] || '').trim();
+        const q = { kind: 'expression', key: obj.key, name, table: '', descKey: obj.key, declLine: i, bodyStart: -1, bodyEnd: -1, fenced: !!fenceMatch, editable: obj.editable, inline: fenceMatch ? '' : rhs };
         if (fenceMatch) openMBody(q, i, -1, true);
         else if (rhs === '') openMBody(q, i, d + 1, false);
         else mQueries.push(q);
@@ -914,7 +920,11 @@ function parseTmdl(raw) {
           const prop = pm[1].toLowerCase();
           if (prop === 'datatype' && pm[2] !== undefined) top.obj.dataType = pm[2].trim();
           if (prop === 'ishidden') top.obj.isHidden = pm[2] === undefined || pm[2].trim().toLowerCase() !== 'false';
+          if (prop === 'datacategory' && pm[2] !== undefined) top.obj.dataCategory = pm[2].trim();
+          if (prop === 'querygroup' && pm[2] !== undefined) top.obj.queryGroup = parseObjectName(pm[2].trim());
         }
+        const am = /^annotation\s+PBI_ResultType\s*=\s*(.+)$/i.exec(body);
+        if (am) top.obj.resultType = am[1].trim();
       }
       stack.push({ kind: 'other', depth: d });
     }
@@ -1166,6 +1176,9 @@ function readStepDescription(lines, stepLine, floor, commentLines) {
  * @property {string} code         full M body (dedented), '' when inline
  * @property {MStep[]} steps
  * @property {string} error        why steps could not be recognised ('' when fine)
+ * @property {string} inline       expression written on the declaration line ('' otherwise)
+ * @property {string} queryGroup   Power Query group of an expression
+ * @property {string} resultType   `PBI_ResultType` annotation of an expression
  */
 
 const CODE_MAX = 20000;
@@ -1187,7 +1200,11 @@ function collectQueries(parsed) {
   const out = [];
   for (const r of parsed.mQueries || []) {
     /** @type {MQuery} */
-    const q = { key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '' };
+    const obj = r.kind === 'expression' ? parsed.objects.find((o) => o.key === r.descKey) : null;
+    const q = {
+      key: r.key, kind: r.kind, name: r.name, table: r.table, descKey: r.descKey, editable: r.editable, code: '', steps: [], error: '',
+      inline: r.inline || '', queryGroup: (obj && obj.queryGroup) || '', resultType: (obj && obj.resultType) || '',
+    };
     if (r.bodyStart >= 0) {
       const body = parsed.lines.slice(r.bodyStart, r.bodyEnd + 1);
       const code = dedentLines(body).join('\n');
@@ -1324,6 +1341,7 @@ const { normalizeDescription } = __req("core/writer.js");
  * @property {string} table
  * @property {string} name
  * @property {string=} dataType
+ * @property {string=} dataCategory
  * @property {boolean} isHidden
  * @property {string=} expression
  * @property {boolean} editable
@@ -1361,6 +1379,7 @@ function buildItems(parsed) {
         table: o.table,
         name: o.name,
         dataType: o.dataType,
+        dataCategory: o.dataCategory,
         isHidden: o.isHidden,
         expression: o.expression,
         editable: o.editable,
@@ -4429,6 +4448,163 @@ function initAi(app, ctx) {
 exports.initAi = initAi;
 });
 
+__def("core/classify.js", function (exports) {
+// Sidebar grouping by naming convention and model metadata. Pure functions.
+
+/** Groups of the "Tabel, kolom & measure" sidebar, in display order. */
+const TABLE_GROUPS = [
+  ['special', 'Special Table'],
+  ['fact', 'Fact Table'],
+  ['dim', 'Dimension Table'],
+  ['other', 'Lainnya'],
+];
+
+/** Groups of the Power Query sidebar, in display order. */
+const QUERY_GROUPS = [
+  ['special', 'Special Table'],
+  ['fact', 'Fact Table'],
+  ['dim', 'Dimension Table'],
+  ['staging', 'Staging'],
+  ['other', 'Lainnya'],
+  ['fnparam', 'Fungsi & Parameter'],
+];
+
+/**
+ * True when `name` starts with `word` (case-insensitive) used as a prefix, e.g. Dim:
+ * DimCustomer, dimCustomer, Dim_Customer, Dim Customer, DIM_CUSTOMER, DIMCustomer → yes;
+ * Dimonitor, Dimension, DIMONITOR → no. The character after the prefix must not be a
+ * lower-case letter; after an all-caps prefix it must be a non-letter, or an upper-case
+ * letter followed by a lower-case one.
+ * @param {string} name
+ * @param {string} word lower-case prefix
+ */
+function prefixMatch(name, word) {
+  const n = String(name || '').trim();
+  const p = n.slice(0, word.length);
+  if (p.toLowerCase() !== word) return false;
+  const rest = n.slice(word.length);
+  if (rest === '') return true;
+  const c = rest[0];
+  if (!/[A-Za-z]/.test(c)) return true;
+  const allCaps = p === p.toUpperCase() && /[A-Z]/.test(p) && word.length > 1;
+  if (allCaps) return /[A-Z]/.test(c) && /[a-z]/.test(rest[1] || '');
+  return /[A-Z]/.test(c);
+}
+
+/** Lower-case name without leading symbols and without separators. */
+function squash(name) {
+  return String(name || '').trim().replace(/^[^A-Za-z0-9]+/, '').toLowerCase().replace(/[\s_\-.]+/g, '');
+}
+
+/** Calendar / date table by name (incl. Power BI auto date tables). */
+function isCalendarName(name) {
+  if (/^(LocalDateTable|DateTableTemplate)_/i.test(String(name || '').trim())) return true;
+  return /^(dim|tbl|tabel|table|master)?(date|dates|calendar|calendars|calender|kalender|tanggal|datetime)(table|tabel|tbl|dim)?$/.test(squash(name));
+}
+
+/** Table that stores measures, by name. */
+function isMeasureTableName(name) {
+  const n = squash(name);
+  return /^(key|all|my|base|main)?measures?(table|tabel|tbl|group|grp|folder)?$/.test(n)
+    || /^(tbl|table|tabel)measures?$/.test(n)
+    || /measures$/.test(n);
+}
+
+/**
+ * @param {{name:string, dataCategory?:string, columns?:{name:string, isHidden?:boolean}[], measureCount?:number}} t
+ * @returns {{group:'special'|'fact'|'dim'|'other', reason:string}}
+ */
+function classifyTable(t) {
+  const columns = t.columns || [];
+  const measures = t.measureCount || 0;
+  if (isCalendarName(t.name) || String(t.dataCategory || '').toLowerCase() === 'time') return { group: 'special', reason: 'kalender' };
+  if (isMeasureTableName(t.name)) return { group: 'special', reason: 'tabel measure' };
+  // Only measures, no real data columns (none, or a single helper column).
+  const helperOnly = columns.length === 0
+    || (columns.length === 1 && (columns[0].isHidden || /^(column1|value|dummy|kolom1|blank|helper)$/i.test(columns[0].name)));
+  if (measures > 0 && helperOnly) return { group: 'special', reason: 'tabel measure' };
+  if (prefixMatch(t.name, 'fact')) return { group: 'fact', reason: '' };
+  if (prefixMatch(t.name, 'dim')) return { group: 'dim', reason: '' };
+  return { group: 'other', reason: '' };
+}
+
+/** Parameter query: Power BI writes `meta [IsParameterQuery = true, …]`. */
+function isParameterCode(code) {
+  return /\bIsParameterQuery\s*=\s*true\b/i.test(String(code || ''));
+}
+
+/** Function query: fn/fx prefix, PBI_ResultType = Function, or code that is a function literal. */
+function isFunctionQuery(name, resultType, code) {
+  if (prefixMatch(name, 'fn') || prefixMatch(name, 'fx')) return true;
+  if (String(resultType || '').toLowerCase() === 'function') return true;
+  const c = String(code || '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').trim();
+  return /^\([^()]*\)\s*(as\s+[A-Za-z_.]+(\s+nullable)?\s*)?=>/.test(c);
+}
+
+/**
+ * @param {{kind:'partition'|'expression', name:string, table:string, code?:string, inline?:string, queryGroup?:string, resultType?:string}} q
+ * @param {Parameters<typeof classifyTable>[0]=} table info of the owning table (partitions)
+ * @returns {{group:string, role:'function'|'parameter'|'', loaded:boolean}}
+ */
+function classifyQuery(q, table) {
+  if (q.kind === 'partition') {
+    const t = table || { name: q.table };
+    return { group: classifyTable(t).group, role: '', loaded: true };
+  }
+  const code = q.inline || q.code || '';
+  if (isParameterCode(code)) return { group: 'fnparam', role: 'parameter', loaded: false };
+  if (isFunctionQuery(q.name, q.resultType, code)) return { group: 'fnparam', role: 'function', loaded: false };
+  if (isCalendarName(q.name) || isMeasureTableName(q.name)) return { group: 'special', role: '', loaded: false };
+  if (prefixMatch(q.name, 'fact')) return { group: 'fact', role: '', loaded: false };
+  if (prefixMatch(q.name, 'dim')) return { group: 'dim', role: '', loaded: false };
+  if (prefixMatch(q.name, 'staging') || prefixMatch(q.name, 'stg') || /staging/i.test(q.queryGroup || '')) return { group: 'staging', role: '', loaded: false };
+  return { group: 'other', role: '', loaded: false };
+}
+
+/**
+ * Classification input for a table group of the editor (see items.js TableGroup).
+ * @param {{name:string, items:{type:string, name:string, isHidden?:boolean, dataCategory?:string}[]}} g
+ */
+function tableInfo(g) {
+  const t = g.items.find((i) => i.type === 'table');
+  return {
+    name: g.name,
+    dataCategory: t ? t.dataCategory : undefined,
+    columns: g.items.filter((i) => i.type === 'column'),
+    measureCount: g.items.filter((i) => i.type === 'measure').length,
+  };
+}
+
+exports.TABLE_GROUPS = TABLE_GROUPS; exports.QUERY_GROUPS = QUERY_GROUPS; exports.prefixMatch = prefixMatch; exports.isCalendarName = isCalendarName; exports.isMeasureTableName = isMeasureTableName; exports.classifyTable = classifyTable; exports.isParameterCode = isParameterCode; exports.isFunctionQuery = isFunctionQuery; exports.classifyQuery = classifyQuery; exports.tableInfo = tableInfo;
+});
+
+__def("ui/side-groups.js", function (exports) {
+// Collapsible category header for the sidebars (shared by both edit views).
+
+const { h, fmt } = __req("ui/dom.js");
+
+/**
+ * @param {{id:string, title:string, count:number, open:boolean, domId:string, onToggle:(open:boolean)=>void}} o
+ * @returns {{head:HTMLElement, items:HTMLElement}}
+ */
+function sideGroup(o) {
+  const items = h('div', { class: 'side-group-items', id: o.domId, hidden: !o.open });
+  const head = h('button', {
+    type: 'button', class: 'side-group', dataset: { group: o.id }, 'aria-expanded': String(o.open), 'aria-controls': o.domId,
+  }, h('span', { class: 'side-chevron', 'aria-hidden': 'true', text: '▸' }), h('span', { class: 'side-group-title', text: o.title }),
+  h('span', { class: 'side-group-count', text: `(${fmt(o.count)})` }));
+  head.addEventListener('click', () => {
+    const nowOpen = items.hidden; // toggle without rebuilding the list (keeps the scroll position)
+    items.hidden = !nowOpen;
+    head.setAttribute('aria-expanded', String(nowOpen));
+    o.onToggle(nowOpen);
+  });
+  return { head, items };
+}
+
+exports.sideGroup = sideGroup;
+});
+
 __def("ui/grid.js", function (exports) {
 // Step 2: editor. Sidebar of tables with progress, one active table rendered at a
 // time; cross-table views ("Semua kosong", search) are paginated (200 rows).
@@ -4439,6 +4615,8 @@ const { truncate } = __req("core/text.js");
 const { h, $, clear, autoGrow, fmt } = __req("ui/dom.js");
 const { initTools } = __req("ui/tools.js");
 const { initAi } = __req("ui/ai.js");
+const { TABLE_GROUPS, classifyTable, tableInfo } = __req("core/classify.js");
+const { sideGroup } = __req("ui/side-groups.js");
 
 const PAGE_SIZES = [10, 25, 50];
 const DEFAULT_PAGE_SIZE = 25;
@@ -4467,6 +4645,8 @@ function initGrid(app, root) {
     rows: new Map(),
     /** @type {Map<string, HTMLElement>} */
     sideItems: new Map(),
+    /** collapsed sidebar groups (special/fact/dim/other), remembered in prefs */
+    collapsed: new Set(Array.isArray(app.prefs.objCollapsed) ? app.prefs.objCollapsed : []),
   };
 
   // ---------- skeleton ----------
@@ -4579,7 +4759,28 @@ function initGrid(app, root) {
       const sb = stats.get(b.key);
       return (sb.total - sb.filled) - (sa.total - sa.filled) || a.name.localeCompare(b.name);
     });
-    for (const t of tables) {
+    // Group by naming convention: Special (calendar / measure tables), Fact, Dimension, Lainnya.
+    const byGroup = new Map(TABLE_GROUPS.map(([id]) => [id, []]));
+    for (const t of tables) byGroup.get(classifyTable(tableInfo(t)).group).push(t);
+    for (const [gid, title] of TABLE_GROUPS) {
+      const list = byGroup.get(gid);
+      if (!list.length) continue;
+      const g = sideGroup({
+        id: gid, title, count: list.length, open: !ui.collapsed.has(gid), domId: 'obj-group-' + gid,
+        onToggle: (open) => {
+          if (open) ui.collapsed.delete(gid);
+          else ui.collapsed.add(gid);
+          app.savePrefs({ objCollapsed: [...ui.collapsed] });
+        },
+      });
+      sideList.append(g.head, g.items);
+      for (const t of list) appendTable(t, g.items);
+    }
+    markActiveSide();
+    updateEmptyCount();
+    if (scroller) scroller.scrollTop = keepTop;
+
+    function appendTable(t, container) {
       const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { table: t.key }, title: t.name },
         h('span', { class: 'side-name' }, t.name, t.editable ? null : h('span', { class: 'tag tiny', text: 'ref' })),
         h('span', { class: 'side-count' }),
@@ -4593,11 +4794,8 @@ function initGrid(app, root) {
       });
       ui.sideItems.set(t.key, el);
       updateSideItem(t.key, stats.get(t.key));
-      sideList.append(el);
+      container.append(el);
     }
-    markActiveSide();
-    updateEmptyCount();
-    if (scroller) scroller.scrollTop = keepTop;
   }
 
   function updateSideItem(tableKey, stat) {
@@ -5481,6 +5679,8 @@ const { truncate } = __req("core/text.js");
 const { lineDiff } = __req("core/diff.js");
 const { pqFileName } = __req("core/refactor.js");
 const { tokenizeM } = __req("core/mquery.js");
+const { QUERY_GROUPS, classifyQuery, tableInfo } = __req("core/classify.js");
+const { sideGroup } = __req("ui/side-groups.js");
 const { h, clear, autoGrow, fmt, toast, copyText, downloadText } = __req("ui/dom.js");
 
 const LINE_MAX = 300;
@@ -5558,6 +5758,12 @@ function initMPanel(app, root) {
     main));
 
   const doc = () => app.doc();
+  /** classification of a query (group, function/parameter role, loaded to the model) */
+  const classOf = (q) => {
+    const d = doc();
+    const g = q.kind === 'partition' ? d.tables.find((t) => t.key === q.table.toLowerCase()) : null;
+    return classifyQuery(q, g ? tableInfo(g) : undefined);
+  };
   const queryOf = (key) => (doc() ? doc().queries.find((q) => q.key === key) || null : null);
   const label = (q) => (q.kind === 'partition' ? q.table + (q.name.toLowerCase() !== q.table.toLowerCase() ? ' › ' + q.name : '') : q.name);
   const isEmptyKey = (key) => {
@@ -5584,35 +5790,37 @@ function initMPanel(app, root) {
     ui.sideItems.clear();
     const d = doc();
     if (!d) return;
-    const groups = [
-      ['partition', 'Query tabel'],
-      ['expression', 'Parameter, fungsi & staging'],
-    ];
-    for (const [kind, title] of groups) {
-      let qs = d.queries.filter((q) => q.kind === kind);
-      if (ui.filter === 'todo') qs = qs.filter((q) => {
-        const s = stats(q);
-        return s.filled < s.total;
-      });
+    // Group by naming convention / metadata: Special, Fact, Dimension, Staging, Lainnya, Fungsi & Parameter.
+    const byGroup = new Map(QUERY_GROUPS.map(([id]) => [id, []]));
+    for (const q of d.queries) {
+      if (ui.filter === 'todo') {
+        const st = stats(q);
+        if (st.filled >= st.total) continue;
+      }
+      byGroup.get(classOf(q).group).push(q);
+    }
+    for (const [gid, title] of QUERY_GROUPS) {
+      const qs = byGroup.get(gid);
       if (!qs.length) continue;
-      const open = !ui.collapsed.has(kind);
-      const items = h('div', { class: 'side-group-items', id: 'mq-group-' + kind, hidden: !open });
-      const head = h('button', {
-        type: 'button', class: 'side-group', dataset: { group: kind }, 'aria-expanded': String(open), 'aria-controls': 'mq-group-' + kind,
-      }, h('span', { class: 'side-chevron', 'aria-hidden': 'true', text: '▸' }), h('span', { class: 'side-group-title', text: title }),
-      h('span', { class: 'side-group-count', text: `(${fmt(qs.length)})` }));
-      head.addEventListener('click', () => {
-        const nowOpen = items.hidden; // toggle without rebuilding the list (keeps the scroll position)
-        items.hidden = !nowOpen;
-        head.setAttribute('aria-expanded', String(nowOpen));
-        if (nowOpen) ui.collapsed.delete(kind);
-        else ui.collapsed.add(kind);
-        app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+      const g = sideGroup({
+        id: gid, title, count: qs.length, open: !ui.collapsed.has(gid), domId: 'mq-group-' + gid,
+        onToggle: (open) => {
+          if (open) ui.collapsed.delete(gid);
+          else ui.collapsed.add(gid);
+          app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+        },
       });
-      sideList.append(head, items);
+      sideList.append(g.head, g.items);
       for (const q of qs) {
-        const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { query: q.key }, title: label(q) },
-          h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
+        const c = classOf(q);
+        const notLoaded = !c.loaded && !c.role;
+        const el = h('button', {
+          type: 'button', class: 'side-item' + (notLoaded ? ' not-loaded' : ''), role: 'option', dataset: { query: q.key },
+          title: label(q) + (notLoaded ? ' · tidak dimuat ke model' : ''),
+        },
+          h('span', { class: 'side-name' }, label(q),
+            c.role ? h('span', { class: 'tag tiny', text: c.role === 'function' ? 'fungsi' : 'parameter' }) : null,
+            q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
             d.refactors && d.refactors.has(q.key) ? h('span', { class: 'rf-badge', title: 'Sudah ada hasil refactor', text: ' 🛠' }) : null),
           h('span', { class: 'side-count' }),
           h('span', { class: 'side-bar' }, h('span')));
@@ -5623,7 +5831,7 @@ function initMPanel(app, root) {
         });
         ui.sideItems.set(q.key, el);
         updateSideItem(q);
-        items.append(el);
+        g.items.append(el);
       }
     }
     if (!sideList.childElementCount) {
@@ -5757,7 +5965,11 @@ function initMPanel(app, root) {
     const s = stats(q);
     const head = h('div', { class: 'view-head' },
       h('h2', { text: label(q) }),
-      h('span', { class: 'type-badge ' + (q.kind === 'partition' ? 'table' : 'measure'), text: q.kind === 'partition' ? 'Query tabel' : 'Expression' }),
+      (() => {
+        const c = classOf(q);
+        const txt = c.loaded ? 'Dimuat ke model' : c.role === 'function' ? 'Fungsi' : c.role === 'parameter' ? 'Parameter' : 'Tidak dimuat ke model';
+        return h('span', { class: 'type-badge ' + (c.loaded ? 'table' : c.role ? 'column' : 'measure'), text: txt });
+      })(),
       h('span', { class: 'muted', id: 'mq-stats', text: `${fmt(q.steps.length)} step · ${fmt(s.filled)}/${fmt(s.total)} terisi` }));
     const sub = result ? (ui.subtab.get(q.key) || 'desc') : 'desc';
     const subtabs = h('div', { class: 'subtabs', role: 'tablist' },

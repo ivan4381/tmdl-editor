@@ -21,6 +21,9 @@ import { NAME_SRC, parseObjectName } from './names.js';
  * @property {string=} dataType
  * @property {boolean} isHidden
  * @property {boolean} editable     false for `ref table`
+ * @property {string=} dataCategory table `dataCategory` (e.g. Time for a marked date table)
+ * @property {string=} queryGroup   expression `queryGroup`
+ * @property {string=} resultType   expression `annotation PBI_ResultType` (Table, Text, Function, …)
  */
 
 /**
@@ -48,6 +51,7 @@ import { NAME_SRC, parseObjectName } from './names.js';
  * @property {number} bodyEnd    last non-blank line of the M body (inclusive)
  * @property {boolean} fenced
  * @property {boolean} editable  false under `ref`
+ * @property {string=} inline    expression body written on the declaration line (e.g. a parameter value)
  */
 
 const CONTAINERS = new Set(['createorreplace', 'database', 'model']);
@@ -252,8 +256,8 @@ export function parseTmdl(raw) {
       stack.push({ kind: 'expression', depth: d, obj });
       if (m[3] !== undefined) {
         /** @type {MQueryRange} */
-        const q = { kind: 'expression', key: obj.key, name, table: '', descKey: obj.key, declLine: i, bodyStart: -1, bodyEnd: -1, fenced: !!fenceMatch, editable: obj.editable };
         const rhs = (m[4] || '').trim();
+        const q = { kind: 'expression', key: obj.key, name, table: '', descKey: obj.key, declLine: i, bodyStart: -1, bodyEnd: -1, fenced: !!fenceMatch, editable: obj.editable, inline: fenceMatch ? '' : rhs };
         if (fenceMatch) openMBody(q, i, -1, true);
         else if (rhs === '') openMBody(q, i, d + 1, false);
         else mQueries.push(q);
@@ -315,7 +319,11 @@ export function parseTmdl(raw) {
           const prop = pm[1].toLowerCase();
           if (prop === 'datatype' && pm[2] !== undefined) top.obj.dataType = pm[2].trim();
           if (prop === 'ishidden') top.obj.isHidden = pm[2] === undefined || pm[2].trim().toLowerCase() !== 'false';
+          if (prop === 'datacategory' && pm[2] !== undefined) top.obj.dataCategory = pm[2].trim();
+          if (prop === 'querygroup' && pm[2] !== undefined) top.obj.queryGroup = parseObjectName(pm[2].trim());
         }
+        const am = /^annotation\s+PBI_ResultType\s*=\s*(.+)$/i.exec(body);
+        if (am) top.obj.resultType = am[1].trim();
       }
       stack.push({ kind: 'other', depth: d });
     }

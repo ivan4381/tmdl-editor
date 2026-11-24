@@ -10,6 +10,7 @@ import { normalizeDescription } from './writer.js';
  * @property {string} table
  * @property {string} name
  * @property {string=} dataType
+ * @property {string=} dataCategory
  * @property {boolean} isHidden
  * @property {string=} expression
  * @property {boolean} editable
@@ -47,6 +48,7 @@ export function buildItems(parsed) {
         table: o.table,
         name: o.name,
         dataType: o.dataType,
+        dataCategory: o.dataCategory,
         isHidden: o.isHidden,
         expression: o.expression,
         editable: o.editable,

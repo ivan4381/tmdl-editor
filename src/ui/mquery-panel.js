@@ -6,6 +6,8 @@ import { truncate } from '../core/text.js';
 import { lineDiff } from '../core/diff.js';
 import { pqFileName } from '../core/refactor.js';
 import { tokenizeM } from '../core/mquery.js';
+import { QUERY_GROUPS, classifyQuery, tableInfo } from '../core/classify.js';
+import { sideGroup } from './side-groups.js';
 import { h, clear, autoGrow, fmt, toast, copyText, downloadText } from './dom.js';
 
 const LINE_MAX = 300;
@@ -83,6 +85,12 @@ export function initMPanel(app, root) {
     main));
 
   const doc = () => app.doc();
+  /** classification of a query (group, function/parameter role, loaded to the model) */
+  const classOf = (q) => {
+    const d = doc();
+    const g = q.kind === 'partition' ? d.tables.find((t) => t.key === q.table.toLowerCase()) : null;
+    return classifyQuery(q, g ? tableInfo(g) : undefined);
+  };
   const queryOf = (key) => (doc() ? doc().queries.find((q) => q.key === key) || null : null);
   const label = (q) => (q.kind === 'partition' ? q.table + (q.name.toLowerCase() !== q.table.toLowerCase() ? ' › ' + q.name : '') : q.name);
   const isEmptyKey = (key) => {
@@ -109,35 +117,37 @@ export function initMPanel(app, root) {
     ui.sideItems.clear();
     const d = doc();
     if (!d) return;
-    const groups = [
-      ['partition', 'Query tabel'],
-      ['expression', 'Parameter, fungsi & staging'],
-    ];
-    for (const [kind, title] of groups) {
-      let qs = d.queries.filter((q) => q.kind === kind);
-      if (ui.filter === 'todo') qs = qs.filter((q) => {
-        const s = stats(q);
-        return s.filled < s.total;
-      });
+    // Group by naming convention / metadata: Special, Fact, Dimension, Staging, Lainnya, Fungsi & Parameter.
+    const byGroup = new Map(QUERY_GROUPS.map(([id]) => [id, []]));
+    for (const q of d.queries) {
+      if (ui.filter === 'todo') {
+        const st = stats(q);
+        if (st.filled >= st.total) continue;
+      }
+      byGroup.get(classOf(q).group).push(q);
+    }
+    for (const [gid, title] of QUERY_GROUPS) {
+      const qs = byGroup.get(gid);
       if (!qs.length) continue;
-      const open = !ui.collapsed.has(kind);
-      const items = h('div', { class: 'side-group-items', id: 'mq-group-' + kind, hidden: !open });
-      const head = h('button', {
-        type: 'button', class: 'side-group', dataset: { group: kind }, 'aria-expanded': String(open), 'aria-controls': 'mq-group-' + kind,
-      }, h('span', { class: 'side-chevron', 'aria-hidden': 'true', text: '▸' }), h('span', { class: 'side-group-title', text: title }),
-      h('span', { class: 'side-group-count', text: `(${fmt(qs.length)})` }));
-      head.addEventListener('click', () => {
-        const nowOpen = items.hidden; // toggle without rebuilding the list (keeps the scroll position)
-        items.hidden = !nowOpen;
-        head.setAttribute('aria-expanded', String(nowOpen));
-        if (nowOpen) ui.collapsed.delete(kind);
-        else ui.collapsed.add(kind);
-        app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+      const g = sideGroup({
+        id: gid, title, count: qs.length, open: !ui.collapsed.has(gid), domId: 'mq-group-' + gid,
+        onToggle: (open) => {
+          if (open) ui.collapsed.delete(gid);
+          else ui.collapsed.add(gid);
+          app.savePrefs({ mqCollapsed: [...ui.collapsed] });
+        },
       });
-      sideList.append(head, items);
+      sideList.append(g.head, g.items);
       for (const q of qs) {
-        const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { query: q.key }, title: label(q) },
-          h('span', { class: 'side-name' }, label(q), q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
+        const c = classOf(q);
+        const notLoaded = !c.loaded && !c.role;
+        const el = h('button', {
+          type: 'button', class: 'side-item' + (notLoaded ? ' not-loaded' : ''), role: 'option', dataset: { query: q.key },
+          title: label(q) + (notLoaded ? ' · tidak dimuat ke model' : ''),
+        },
+          h('span', { class: 'side-name' }, label(q),
+            c.role ? h('span', { class: 'tag tiny', text: c.role === 'function' ? 'fungsi' : 'parameter' }) : null,
+            q.error ? h('span', { class: 'tag tiny warn', text: 'M tak dikenali' }) : null,
             d.refactors && d.refactors.has(q.key) ? h('span', { class: 'rf-badge', title: 'Sudah ada hasil refactor', text: ' 🛠' }) : null),
           h('span', { class: 'side-count' }),
           h('span', { class: 'side-bar' }, h('span')));
@@ -148,7 +158,7 @@ export function initMPanel(app, root) {
         });
         ui.sideItems.set(q.key, el);
         updateSideItem(q);
-        items.append(el);
+        g.items.append(el);
       }
     }
     if (!sideList.childElementCount) {
@@ -282,7 +292,11 @@ export function initMPanel(app, root) {
     const s = stats(q);
     const head = h('div', { class: 'view-head' },
       h('h2', { text: label(q) }),
-      h('span', { class: 'type-badge ' + (q.kind === 'partition' ? 'table' : 'measure'), text: q.kind === 'partition' ? 'Query tabel' : 'Expression' }),
+      (() => {
+        const c = classOf(q);
+        const txt = c.loaded ? 'Dimuat ke model' : c.role === 'function' ? 'Fungsi' : c.role === 'parameter' ? 'Parameter' : 'Tidak dimuat ke model';
+        return h('span', { class: 'type-badge ' + (c.loaded ? 'table' : c.role ? 'column' : 'measure'), text: txt });
+      })(),
       h('span', { class: 'muted', id: 'mq-stats', text: `${fmt(q.steps.length)} step · ${fmt(s.filled)}/${fmt(s.total)} terisi` }));
     const sub = result ? (ui.subtab.get(q.key) || 'desc') : 'desc';
     const subtabs = h('div', { class: 'subtabs', role: 'tablist' },

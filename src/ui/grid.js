@@ -7,6 +7,8 @@ import { truncate } from '../core/text.js';
 import { h, $, clear, autoGrow, fmt } from './dom.js';
 import { initTools } from './tools.js';
 import { initAi } from './ai.js';
+import { TABLE_GROUPS, classifyTable, tableInfo } from '../core/classify.js';
+import { sideGroup } from './side-groups.js';
 
 const PAGE_SIZES = [10, 25, 50];
 const DEFAULT_PAGE_SIZE = 25;
@@ -35,6 +37,8 @@ export function initGrid(app, root) {
     rows: new Map(),
     /** @type {Map<string, HTMLElement>} */
     sideItems: new Map(),
+    /** collapsed sidebar groups (special/fact/dim/other), remembered in prefs */
+    collapsed: new Set(Array.isArray(app.prefs.objCollapsed) ? app.prefs.objCollapsed : []),
   };
 
   // ---------- skeleton ----------
@@ -147,7 +151,28 @@ export function initGrid(app, root) {
       const sb = stats.get(b.key);
       return (sb.total - sb.filled) - (sa.total - sa.filled) || a.name.localeCompare(b.name);
     });
-    for (const t of tables) {
+    // Group by naming convention: Special (calendar / measure tables), Fact, Dimension, Lainnya.
+    const byGroup = new Map(TABLE_GROUPS.map(([id]) => [id, []]));
+    for (const t of tables) byGroup.get(classifyTable(tableInfo(t)).group).push(t);
+    for (const [gid, title] of TABLE_GROUPS) {
+      const list = byGroup.get(gid);
+      if (!list.length) continue;
+      const g = sideGroup({
+        id: gid, title, count: list.length, open: !ui.collapsed.has(gid), domId: 'obj-group-' + gid,
+        onToggle: (open) => {
+          if (open) ui.collapsed.delete(gid);
+          else ui.collapsed.add(gid);
+          app.savePrefs({ objCollapsed: [...ui.collapsed] });
+        },
+      });
+      sideList.append(g.head, g.items);
+      for (const t of list) appendTable(t, g.items);
+    }
+    markActiveSide();
+    updateEmptyCount();
+    if (scroller) scroller.scrollTop = keepTop;
+
+    function appendTable(t, container) {
       const el = h('button', { type: 'button', class: 'side-item', role: 'option', dataset: { table: t.key }, title: t.name },
         h('span', { class: 'side-name' }, t.name, t.editable ? null : h('span', { class: 'tag tiny', text: 'ref' })),
         h('span', { class: 'side-count' }),
@@ -161,11 +186,8 @@ export function initGrid(app, root) {
       });
       ui.sideItems.set(t.key, el);
       updateSideItem(t.key, stats.get(t.key));
-      sideList.append(el);
+      container.append(el);
     }
-    markActiveSide();
-    updateEmptyCount();
-    if (scroller) scroller.scrollTop = keepTop;
   }
 
   function updateSideItem(tableKey, stat) {
