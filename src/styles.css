@@ -21,6 +21,7 @@
   --t-table: #6941c6;
   --t-column: #0b6580;
   --t-measure: #9a3c06;
+  --code-comment: #167030;
   --radius: 8px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -52,6 +53,7 @@
     --t-table: #b69cff;
     --t-column: #5ccfe6;
     --t-measure: #ffa860;
+    --code-comment: #7ee787;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
@@ -372,3 +374,6 @@ pre.rf-code { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface
 .progress-bar.indeterminate > span { position: absolute; width: 35%; animation: rf-slide 1.4s ease-in-out infinite; }
 @keyframes rf-slide { 0% { left: -35%; } 100% { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .progress-bar.indeterminate > span { animation: none; width: 100%; opacity: 0.5; } }
+/* M code comments (refactor result, code previews, diff) */
+.m-comment { color: var(--code-comment); }
+pre.expr .m-comment { opacity: 1; }

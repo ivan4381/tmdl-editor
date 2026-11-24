@@ -5,9 +5,51 @@ import { normalizeDescription } from '../core/writer.js';
 import { truncate } from '../core/text.js';
 import { lineDiff } from '../core/diff.js';
 import { pqFileName } from '../core/refactor.js';
+import { tokenizeM } from '../core/mquery.js';
 import { h, clear, autoGrow, fmt, toast, copyText, downloadText } from './dom.js';
 
 const LINE_MAX = 300;
+
+/**
+ * M code as DOM nodes with comments wrapped in <span class="m-comment">.
+ * Uses the M tokenizer, so `//` inside strings is not a comment. Text that cannot be
+ * tokenised (e.g. a line cut out of a multi-line string) falls back to whole-line
+ * `//` comments only.
+ * @param {string} code
+ * @returns {(Node|string)[]}
+ */
+function mCode(code) {
+  let tokens = null;
+  try {
+    tokens = tokenizeM(code);
+  } catch {
+    tokens = null;
+  }
+  if (!tokens) {
+    return code.split('\n').flatMap((line, i) => {
+      const parts = /^\s*\/\//.test(line) ? [h('span', { class: 'm-comment', text: line })] : [line];
+      return i ? ['\n', ...parts] : parts;
+    });
+  }
+  const out = [];
+  let buf = '';
+  for (const t of tokens) {
+    if (t.t === 'line' || t.t === 'block') {
+      if (buf) out.push(buf);
+      buf = '';
+      out.push(h('span', { class: 'm-comment', text: t.v }));
+    } else buf += t.v;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+/** Replace the content of a <pre> with highlighted M code. */
+function setCode(el, code) {
+  clear(el);
+  el.append(...mCode(code));
+  return el;
+}
 const CODE_PREVIEW_LINES = 4;
 
 /**
@@ -170,13 +212,13 @@ export function initMPanel(app, root) {
     const lines = code.split('\n');
     const short = lines.slice(0, CODE_PREVIEW_LINES).map((l) => truncate(l, LINE_MAX)).join('\n');
     const full = lines.map((l) => truncate(l, LINE_MAX)).join('\n');
-    const pre = h('pre', { class: 'expr', text: short });
+    const pre = setCode(h('pre', { class: 'expr' }), short);
     const out = [pre];
     if (lines.length > CODE_PREVIEW_LINES) {
       const btn = h('button', { type: 'button', class: 'link-btn', text: 'selengkapnya' });
       btn.addEventListener('click', () => {
         const open = pre.classList.toggle('expanded');
-        pre.textContent = open ? full : short;
+        setCode(pre, open ? full : short);
         btn.textContent = open ? 'ringkas' : 'selengkapnya';
       });
       out.push(btn);
@@ -265,7 +307,7 @@ export function initMPanel(app, root) {
 
     if (q.code) {
       main.append(h('details', { class: 'code-details' }, h('summary', { text: 'Lihat kode M lengkap' }),
-        h('pre', { class: 'expr expanded code-full', text: q.code.split('\n').map((l) => truncate(l, LINE_MAX)).join('\n') })));
+        setCode(h('pre', { class: 'expr expanded code-full' }), q.code.split('\n').map((l) => truncate(l, LINE_MAX)).join('\n'))));
     }
 
     if (q.steps.length) {
@@ -332,7 +374,7 @@ export function initMPanel(app, root) {
       h('span', { class: 'ln', text: op.a >= 0 ? String(op.a + 1) : '' }),
       h('span', { class: 'ln', text: op.b >= 0 ? String(op.b + 1) : '' }),
       h('span', { class: 'sign', text: op.type === 'add' ? '+' : op.type === 'del' ? '−' : ' ' }),
-      h('span', { class: 'code', text: truncate(op.text, 2000) }))));
+      setCode(h('span', { class: 'code' }), truncate(op.text, 2000)))));
   }
 
   function renderRefactor(q, r, rerun) {
@@ -353,7 +395,7 @@ export function initMPanel(app, root) {
     const card = h('div', { class: 'card rf-card' });
     if (view === 'alt' && r.alternative) {
       card.append(statLine(r.altAnalysis.stats), checkList(r.altAnalysis),
-        h('pre', { class: 'rf-code', id: 'rf-code', text: r.alternative }), codeActions(q, r.alternative, '-alt'));
+        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.alternative), codeActions(q, r.alternative, '-alt'));
     } else if (view === 'diff') {
       const target = ui.rview.get(q.key + '|diff') === 'alt' && r.alternative ? 'alt' : 'code';
       const pick = /** @type {HTMLSelectElement} */ (h('select', { id: 'rf-diff-target' },
@@ -365,7 +407,7 @@ export function initMPanel(app, root) {
         diffView(q.code, target === 'alt' ? r.alternative : r.code));
     } else {
       card.append(statLine(r.analysis.stats), checkList(r.analysis),
-        h('pre', { class: 'rf-code', id: 'rf-code', text: r.code }), codeActions(q, r.code, ''));
+        setCode(h('pre', { class: 'rf-code', id: 'rf-code' }), r.code), codeActions(q, r.code, ''));
     }
     main.append(card);
     if (r.explanation) {
